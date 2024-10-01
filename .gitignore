@@ -1,0 +1,11 @@
+.venv
+.vscode
+.env
+.conda
+__pycache__
+.DS_Store
+*.code-workspace
+
+/data-voters
+/data-relay-depositors
+/test
