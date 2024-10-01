@@ -8,4 +8,7 @@ __pycache__
 
 /data-voters
 /data-relay-depositors
+/data-lp
+/data-relay
+/data-ve
 /test

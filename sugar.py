@@ -50,7 +50,11 @@ class Sugar:
                 "0x0000000000000000000000000000000000000000"
             ).call()
             # raw data store
-            f = open(path_data_raw, "w")
+            try:
+                f = open(path_data_raw, "w")
+            except:
+                os.mkdir(f"{directory}")
+                f = open(path_data_raw, "w")
             f.write(str(call))
             f.close()
 
@@ -130,7 +134,11 @@ class Sugar:
                     break
             calls = str("".join(calls)).replace("][", ", ")
             # raw data store
-            f = open(path_data_raw, "w")
+            try:
+                f = open(path_data_raw, "w")
+            except:
+                os.mkdir(f"{directory}")
+                f = open(path_data_raw, "w")
             f.write(calls)
             f.close()
 
@@ -191,7 +199,11 @@ class Sugar:
                     break
             calls = str("".join(calls)).replace("][", ", ")
             # raw data store
-            f = open(path_data_raw, "w")
+            try:
+                f = open(path_data_raw, "w")
+            except:
+                os.mkdir(f"{directory}")
+                f = open(path_data_raw, "w")
             f.write(calls)
             f.close()
 
@@ -272,7 +284,11 @@ class Sugar:
                         _limit = limit
                     count += 1
             calls = str("".join(calls)).replace("][", ", ")
-            f = open(path_data_raw, "w")
+            try:
+                f = open(path_data_raw, "w")
+            except:
+                os.mkdir(f"{directory}")
+                f = open(path_data_raw, "w")
             f.write(calls)
             f.close()
 
@@ -454,23 +470,23 @@ if __name__ == "__main__":
 
     ##################### BASE #####################
     sugar_base = Sugar("base")
-    # sugar_base.relay_all(
-    #     config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME
-    # )
-    # sugar_base.lp_tokens()
-    # sugar_base.lp_all()
+    sugar_base.relay_all(
+        config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME
+    )
+    sugar_base.lp_tokens()
+    sugar_base.lp_all()
 
-    # sugar_base.ve_all(
-    #     columns_export=config.COLUMNS_VENFT_EXPORT,
-    #     columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
-    # )
-    block_num = 20470613
+    sugar_base.ve_all(
+        columns_export=config.COLUMNS_VENFT_EXPORT,
+        columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
+    )
+    # block_num = 20470613
 
-    pools = [
-        "0x70aCDF2Ad0bf2402C957154f944c19Ef4e1cbAE1",
-        "0x4e962BB3889Bf030368F56810A9c96B83CB3E778",
-    ]
-    sugar_base.voters(pools, block_num, master_export=False)
+    # pools = [
+    #     "0x70aCDF2Ad0bf2402C957154f944c19Ef4e1cbAE1",
+    #     "0x4e962BB3889Bf030368F56810A9c96B83CB3E778",
+    # ]
+    # sugar_base.voters(pools, block_num, master_export=False)
 
     # sugar_base.relay_depositors(12435, block_num, columns_relay_depositors_export)
 
