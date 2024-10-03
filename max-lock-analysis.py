@@ -4,44 +4,29 @@ import config
 if __name__ == "__main__":
 
     ##################### BASE #####################
-    # sugar = Sugar("base")
-    # sugar.relay_all(
-    #     config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME
-    # )
+    sugar = Sugar("base")
+    sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
 
-    # sugar.ve_all(
-    #     columns_export=config.COLUMNS_VENFT_EXPORT,
-    #     columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
-    # )
+    data, block = sugar.ve_all(
+        columns_export=config.COLUMNS_VENFT_EXPORT,
+        columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
+    )
+    veaero_max = data.loc[data["expires_at"] == 0, "governance_amount"].sum()
+    veaero_expires = data.loc[data["expires_at"] != 0, "governance_amount"].sum()
 
-    # data = sugar.ve_all(
-    #     columns_export=config.COLUMNS_VENFT_EXPORT,
-    #     columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
-    #     export=False,
-    #     override=False,
-    # )
-    # veaero_max = data.loc[data["expires_at"] == 0, "governance_amount"].sum()
-    # veaero_expires = data.loc[data["expires_at"] != 0, "governance_amount"].sum()
-
-    # print(
-    #     f"\nveAERO Max Locked Percentage = {100*veaero_max/(veaero_max+veaero_expires)}%\n"
-    # )
+    print(
+        f"\nveAERO Max Locked Percentage = {100*veaero_max/(veaero_max+veaero_expires)}%\n"
+    )
 
     ##################### OP #####################
     sugar = Sugar("op")
-    # sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
+    sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
 
-    # sugar.ve_all(
-    #     columns_export=config.COLUMNS_VENFT_EXPORT,
-    #     columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
-    # )
-
-    data = sugar.ve_all(
+    data, block = sugar.ve_all(
         columns_export=config.COLUMNS_VENFT_EXPORT,
         columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
-        export=False,
-        override=False,
     )
+
     vevelo_max = data.loc[data["expires_at"] == 0, "governance_amount"].sum()
     vevelo_expires = data.loc[data["expires_at"] != 0, "governance_amount"].sum()
 

@@ -5,6 +5,8 @@
 __pycache__
 .DS_Store
 *.code-workspace
+.github
+*.csv
 
 /data-voters
 /data-relay-depositors
@@ -12,3 +14,4 @@ __pycache__
 /data-relay
 /data-ve
 /test
+/examples

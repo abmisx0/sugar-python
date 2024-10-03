@@ -13,19 +13,15 @@ if __name__ == "__main__":
     query_result = dune.run_query_dataframe(query=query, ping_frequency=10)
     # fetch query results
     # query_result = dune.get_latest_result_dataframe(3952558)
+
     old_cl_pools = query_result["pool"].to_list()
     old_cl_names = query_result["name"].to_list()
 
     ###################### OP ######################
-    sugar_op = Sugar("op")
-    sugar_op.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
-
-    sugar_op.ve_all(
+    sugar = Sugar("op")
+    sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
+    data, block_num = sugar.ve_all(
         columns_export=config.COLUMNS_VENFT_EXPORT,
         columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
     )
-    block_num = 125756519
-
-    sugar_op.voters(
-        old_cl_pools, block_num, pool_names=old_cl_names, master_export=True
-    )
+    sugar.voters(old_cl_pools, block_num, pool_names=old_cl_names, master_export=True)

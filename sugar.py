@@ -32,7 +32,6 @@ class Sugar:
         columns_export=[],
         columns_rename={},
         filter_inactive=True,
-        export=True,
         override=True,
     ):
         """Calls relaySugar.all() and exports as csv
@@ -104,14 +103,15 @@ class Sugar:
             data.rename(columns=columns_rename, inplace=True)
         data.sort_index(inplace=True)
 
-        if export:
+        if override:
             print(data.info())
             path_csv = f"{directory}/relay_all_{self.chain}.csv"
             self._export_csv(data, path_csv, directory)
+            return data, block
         else:
-            return data
+            return data, None
 
-    def lp_all(self, limit=500, index_lp=False, export=True, override=True):
+    def lp_all(self, limit=500, index_lp=False, override=True):
         directory = "data-lp"
         path_data_raw = f"{directory}/raw_lp_all_{self.chain}.txt"
 
@@ -155,7 +155,7 @@ class Sugar:
 
         # load lp_tokens data to give CL pairs a name like on the FE
         # note: turn this into a method later ??
-        tokens = self.lp_tokens(listed=False, export=False, override=False)
+        tokens = self.lp_tokens(listed=False, override=False)
         data_cl = data[data["symbol"] == ""]
         for row in data_cl.index:
             tick = data_cl.loc[row, "type"]
@@ -166,22 +166,20 @@ class Sugar:
 
         if index_lp:
             data.set_index("lp", inplace=True)
-
-        if export:
+        if override:
             print(data.info())
             path_csv = f"{directory}/lp_all_{self.chain}.csv"
             self._export_csv(data, path_csv, directory)
-        else:
-            return data
+        return data
 
-    def lp_tokens(self, limit=1000, listed=True, export=True, override=True):
+    def lp_tokens(self, limit=1000, listed=True, override=True):
         directory = "data-lp"
         path_data_raw = f"{directory}/raw_lp_tokens_{self.chain}.txt"
 
         if override:
             offset = 0
             calls = []
-            print("\nStating LpSugar.all() calls")
+            print("\nStating LpSugar.tokens() calls")
             while True:
                 try:
                     call = self.lp.functions.tokens(
@@ -218,13 +216,11 @@ class Sugar:
         data.drop("account_balance", axis=1, inplace=True)
         if listed:
             data = data[data["listed"] == True]
-
-        if export:
+        if override:
             print(data.info())
             path_csv = f"{directory}/lp_tokens_{self.chain}.csv"
             self._export_csv(data, path_csv, directory)
-        else:
-            return data
+        return data
 
     def ve_all(
         self,
@@ -232,10 +228,9 @@ class Sugar:
         columns_export=[],
         columns_rename={},
         weights=True,
-        export=True,
         override=True,
     ):
-        relay = self.relay_all(filter_inactive=False, export=False, override=False)
+        relay = self.relay_all(filter_inactive=False, override=False)
         relay_idx = relay.index.to_list()
         relay_idx = sorted(relay_idx)
         relay_len = len(relay_idx)
@@ -335,22 +330,20 @@ class Sugar:
             data = data.loc[:, columns_export]
         if columns_rename:
             data.rename(columns=columns_rename, inplace=True)
-
-        if export:
+        if override:
             print(data.info())
             path_csv = f"{directory}/ve_all_{self.chain}.csv"
             self._export_csv(data, path_csv, directory)
+            return data, block
         else:
-            return data
+            return data, None
 
     def voters(self, pool_address, block_num, pool_names=[], master_export=True):
         if pool_address.__class__ == str:
             pool_address = [pool_address]
         cols = ["account", "governance_amount", "votes"]
-        data_ve = self.ve_all(
-            columns_export=cols, export=False, weights=False, override=False
-        )
-        data_lp = self.lp_all(index_lp=True, export=False, override=False)
+        data_ve = self.ve_all(columns_export=cols, weights=False, override=False)
+        data_lp = self.lp_all(index_lp=True, override=False)
 
         flg_master = True
         for addy in pool_address:
@@ -431,9 +424,7 @@ class Sugar:
             self._export_csv(data, path_csv, directory)
 
     def relay_depositors(self, mveNFT_ID, block_num, columns_export=[]):
-        data = self.ve_all(
-            columns_export=columns_export, export=False, weights=False, override=False
-        )
+        data = self.ve_all(columns_export=columns_export, weights=False, override=False)
         data = data[data["managed_id"] == mveNFT_ID].sort_values(
             "governance_amount", ascending=False
         )
@@ -469,57 +460,37 @@ if __name__ == "__main__":
     ]
 
     ##################### BASE #####################
-    sugar_base = Sugar("base")
-    sugar_base.relay_all(
-        config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME
-    )
-    sugar_base.lp_tokens()
-    sugar_base.lp_all()
+    sugar = Sugar("base")
+    # sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
+    sugar.lp_tokens()
+    sugar.lp_all()
 
-    sugar_base.ve_all(
-        columns_export=config.COLUMNS_VENFT_EXPORT,
-        columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
-    )
-    # block_num = 20470613
+    # data, block_num = sugar.ve_all(
+    #     columns_export=config.COLUMNS_VENFT_EXPORT,
+    #     columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
+    # )
 
     # pools = [
     #     "0x70aCDF2Ad0bf2402C957154f944c19Ef4e1cbAE1",
     #     "0x4e962BB3889Bf030368F56810A9c96B83CB3E778",
     # ]
-    # sugar_base.voters(pools, block_num, master_export=False)
+    # sugar.voters(pools, block_num, master_export=False)
 
-    # sugar_base.relay_depositors(12435, block_num, columns_relay_depositors_export)
+    # sugar.relay_depositors(12435, block_num, columns_relay_depositors_export)
 
     ###################### OP ######################
-    # sugar_op = Sugar("op")
-    # sugar_op.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
-    # sugar_op.lp_tokens()
-    # sugar_op.lp_all()
+    # sugar = Sugar("op")
+    # sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
+    # sugar.lp_tokens()
+    # sugar.lp_all()
 
-    # sugar_op.ve_all(
-    #     columns_export=config.COLUMNS_VENFT_EXPORT,
-    #     columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
-    # )
-    # block_num = 126056896
+    data, block_num = sugar.ve_all(
+        columns_export=config.COLUMNS_VENFT_EXPORT,
+        columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
+    )
 
-    # sugar_op.relay_depositors(20697, block_num, columns_relay_depositors_export)
-
-    # data = sugar_op.ve_all(
-    #     columns_export=config.COLUMNS_VENFT_EXPORT,
-    #     columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
-    #     export=False,
-    #     override=False,
-    # )
-    # data["locks"] = data.index
-    # total_votes = data.groupby("account")["governance_amount"].sum()
-    # venfts = (
-    #     data.groupby("account")["locks"].apply(list).apply(lambda x: str(x).strip("[]"))
-    # )
-    # data = pd.concat([total_votes, venfts], axis=1).sort_values(
-    #     "governance_amount", ascending=False
-    # )
-    # sugar_op._export_csv(data, f"veVELO_holders_{block_num}")
+    # sugar.relay_depositors(20697, block_num, columns_relay_depositors_export)
 
     ##################### MODE #####################
-    # sugar_mode = Sugar("mode")
-    # sugar_mode.lp_tokens()
+    # sugar = Sugar("mode")
+    # sugar.lp_tokens()
