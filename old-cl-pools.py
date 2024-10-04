@@ -18,7 +18,8 @@ if __name__ == "__main__":
     old_cl_names = query_result["name"].to_list()
 
     ###################### OP ######################
-    sugar = Sugar("op")
+    old_lp_sugar = "0xDa888C610a00686A3cce21b7F4A45A5e52eFa572"
+    sugar = Sugar("op", lp_address=old_lp_sugar)
     sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
     data, block_num = sugar.ve_all(
         columns_export=config.COLUMNS_VENFT_EXPORT,

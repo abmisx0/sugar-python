@@ -2,7 +2,6 @@ from sugar import Sugar
 import config
 
 if __name__ == "__main__":
-
     ##################### BASE #####################
     sugar = Sugar("base")
     sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
