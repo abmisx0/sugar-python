@@ -13,12 +13,8 @@ if __name__ == "__main__":
 
     data["locks"] = data.index
     total_votes = data.groupby("account")["governance_amount"].sum()
-    venfts = (
-        data.groupby("account")["locks"].apply(list).apply(lambda x: str(x).strip("[]"))
-    )
-    data = pd.concat([total_votes, venfts], axis=1).sort_values(
-        "governance_amount", ascending=False
-    )
+    venfts = data.groupby("account")["locks"].apply(list).apply(lambda x: str(x).strip("[]"))
+    data = pd.concat([total_votes, venfts], axis=1).sort_values("governance_amount", ascending=False)
     sugar._export_csv(data, f"veAERO_holders_{block_num}.csv")
 
     ##################### OP #####################
@@ -31,10 +27,6 @@ if __name__ == "__main__":
 
     data["locks"] = data.index
     total_votes = data.groupby("account")["governance_amount"].sum()
-    venfts = (
-        data.groupby("account")["locks"].apply(list).apply(lambda x: str(x).strip("[]"))
-    )
-    data = pd.concat([total_votes, venfts], axis=1).sort_values(
-        "governance_amount", ascending=False
-    )
+    venfts = data.groupby("account")["locks"].apply(list).apply(lambda x: str(x).strip("[]"))
+    data = pd.concat([total_votes, venfts], axis=1).sort_values("governance_amount", ascending=False)
     sugar._export_csv(data, f"veVELO_holders_{block_num}.csv")

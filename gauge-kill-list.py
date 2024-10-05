@@ -24,15 +24,12 @@ if __name__ == "__main__":
     lps_gauge_alive = lps[lps["gauge_alive"]]
 
     lps_gauge_kill = lps_gauge_alive.loc[
-        (lps_gauge_alive["token0"].isin(unlisted_tokens))
-        | (lps_gauge_alive["token1"].isin(unlisted_tokens)),
+        (lps_gauge_alive["token0"].isin(unlisted_tokens)) | (lps_gauge_alive["token1"].isin(unlisted_tokens)),
         :,
     ]
 
     COLUMNS_GAUGE_KILL_EXPORT = ["symbol", "gauge"]
-    sugar._export_csv(
-        lps_gauge_kill.loc[:, COLUMNS_GAUGE_KILL_EXPORT], f"gauge_kill_list_{chain}.csv"
-    )
+    sugar._export_csv(lps_gauge_kill.loc[:, COLUMNS_GAUGE_KILL_EXPORT], f"gauge_kill_list_{chain}.csv")
 
     ##################### OP #####################
     chain = "op"
@@ -57,8 +54,7 @@ if __name__ == "__main__":
     lps_gauge_alive = lps[lps["gauge_alive"]]
 
     lps_gauge_kill = lps_gauge_alive.loc[
-        (lps_gauge_alive["token0"].isin(unlisted_tokens))
-        | (lps_gauge_alive["token1"].isin(unlisted_tokens)),
+        (lps_gauge_alive["token0"].isin(unlisted_tokens)) | (lps_gauge_alive["token1"].isin(unlisted_tokens)),
         :,
     ]
 
