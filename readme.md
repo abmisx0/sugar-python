@@ -10,5 +10,5 @@ Very early build, needs a lot more work
 ## pip installs
 
 ```bash
-pip install pandas numpy web3 python-dotenv dune-client
+pip install pandas web3 python-dotenv dune-client
 ```

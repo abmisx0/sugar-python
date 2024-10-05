@@ -3,8 +3,33 @@ import dotenv
 from web3 import Web3
 import pandas as pd
 import config
-from functools import lru_cache
-from typing import Optional, List, Tuple, Union
+from functools import lru_cache, wraps
+from typing import Optional, List, Tuple, Union, Callable, TypeVar, ParamSpec
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def documented_cache(maxsize: int = None) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """
+    A wrapper for lru_cache that preserves the original function's docstring.
+
+    Args:
+        maxsize: The maximum size of the cache (passed to lru_cache)
+
+    Returns:
+        A decorator that applies lru_cache while preserving the docstring
+    """
+
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        @wraps(func)
+        @lru_cache(maxsize=maxsize)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 class Sugar:
@@ -15,15 +40,15 @@ class Sugar:
         relay_address: Optional[str] = None,
         ve_address: Optional[str] = None,
     ):
-        """!
-        @brief Class to make Sugar calls easily
-
-        @param chain (str): Chain name, (OP, Base, BOB, Mode)
-        @param lp_address (str, optional): Custom LpSugar address. Defaults to None.
-        @param relay_address (str, optional): Custom RelaySugar address. Defaults to None.
-        @param ve_address (str, optional): Custom VeSugar address. Defaults to None.
         """
-        # load alchemy keys
+        Initialize the Sugar class for making Sugar calls easily.
+
+        Args:
+            chain (str): Chain name (OP, Base, BOB, Mode).
+            lp_address (str, optional): Custom LpSugar address. Defaults to None.
+            relay_address (str, optional): Custom RelaySugar address. Defaults to None.
+            ve_address (str, optional): Custom VeSugar address. Defaults to None.
+        """
         dotenv.load_dotenv()
         try:
             self.chain = chain.lower()
@@ -39,6 +64,17 @@ class Sugar:
             raise ValueError(f"Error initializing Sugar: {str(e)}")
 
     def _initialize_contract(self, contract_type: str, address: Optional[str], chain: str):
+        """
+        Initialize a contract object.
+
+        Args:
+            contract_type (str): Type of contract.
+            address (Optional[str]): Address of the contract.
+            chain (str): Chain name.
+
+        Returns:
+            Contract: Contract object.
+        """
         if address:
             return self.w3.eth.contract(address, abi=getattr(config, f"ABI_{contract_type}_SUGAR_{chain}"))
         else:
@@ -47,7 +83,7 @@ class Sugar:
                 abi=getattr(config, f"ABI_{contract_type}_SUGAR_{chain}"),
             )
 
-    @lru_cache(maxsize=32)
+    @documented_cache(maxsize=32)
     def relay_all(
         self,
         columns_export: Optional[Tuple[str]] = None,
@@ -55,15 +91,17 @@ class Sugar:
         filter_inactive: bool = True,
         override: bool = True,
     ) -> Tuple[pd.DataFrame, Optional[int]]:
-        """!
-        @brief Make RelaySugar.all() calls and then store locally with the option to load local data.
+        """
+        Make RelaySugar.all() calls and store locally with the option to load local data.
 
-        @param columns_export (list, optional): Columns to export. Defaults to None.
-        @param columns_rename (dict, optional): Columns to rename. Defaults to None.
-        @param filter_inactive (bool, optional): Filter inactive relays. Defaults to True.
-        @param override (bool, optional): Fetch onchain state. Defaults to True.
+        Args:
+            columns_export (Tuple[str], optional): Columns to export. Defaults to None.
+            columns_rename (frozenset, optional): Columns to rename. Defaults to None.
+            filter_inactive (bool, optional): Filter inactive relays. Defaults to True.
+            override (bool, optional): Fetch onchain state. Defaults to True.
 
-        @return (tuple): Formatted struct as pandas dataframe and block number of first call.
+        Returns:
+            Tuple[pd.DataFrame, Optional[int]]: Formatted struct as pandas dataframe and block number of first call.
         """
         directory = "data-relay"
         path_data_raw = f"{directory}/raw_relay_all_{self.chain}.txt"
@@ -110,6 +148,16 @@ class Sugar:
         return data, block
 
     def _process_votes(self, votes, used_voting_amount):
+        """
+        Process votes from RelaySugar.
+
+        Args:
+            votes (str): Votes as a string.
+            used_voting_amount (int): Used voting amount.
+
+        Returns:
+            str: Processed votes.
+        """
         if not votes:
             return str([])
         return str(
@@ -122,16 +170,18 @@ class Sugar:
             ]
         )
 
-    @lru_cache(maxsize=32)
+    @documented_cache(maxsize=32)
     def lp_tokens(self, limit: int = 1000, listed: bool = True, override: bool = True) -> pd.DataFrame:
-        """!
-        @brief Make LpSugar.tokens() calls and then store locally with the option to load local data.
+        """
+        Make LpSugar.tokens() calls and store locally with the option to load local data.
 
-        @param limit (int, optional): Number of tokens to fetch during each call. Defaults to 1000.
-        @param listed (bool, optional): Filter whitelisted tokens. Defaults to True.
-        @param override (bool, optional): Fetch onchain state. Defaults to True.
+        Args:
+            limit (int, optional): Number of tokens to fetch during each call. Defaults to 1000.
+            listed (bool, optional): Filter whitelisted tokens. Defaults to True.
+            override (bool, optional): Fetch onchain state. Defaults to True.
 
-        @return (dataframe): Formatted struct as pandas dataframe.
+        Returns:
+            pd.DataFrame: Formatted struct as pandas dataframe.
         """
         directory = "data-lp"
         path_data_raw = f"{directory}/raw_lp_tokens_{self.chain}.txt"
@@ -154,6 +204,15 @@ class Sugar:
         return data
 
     def _fetch_lp_tokens(self, limit: int) -> str:
+        """
+        Fetch lp tokens from LpSugar.
+
+        Args:
+            limit (int): Number of tokens to fetch during each call. Defaults to 1000.
+
+        Returns:
+            str: All calls as a string.
+        """
         offset = 0
         all_calls = []
         print("\nStarting LpSugar.tokens() calls\n")
@@ -175,6 +234,16 @@ class Sugar:
         return str("".join(all_calls)).replace("][", ", ")
 
     def _process_lp_tokens(self, all_calls: str, listed: bool) -> pd.DataFrame:
+        """
+        Process lp tokens from LpSugar.
+
+        Args:
+            all_calls (str): All calls as a string.
+            listed (bool): Filter whitelisted tokens.
+
+        Returns:
+            pd.DataFrame: Formatted struct as pandas dataframe.
+        """
         data = pd.DataFrame(eval(all_calls), columns=config.COLUMNS_TOKEN)
         data.drop_duplicates(inplace=True)
         data.set_index("token_address", inplace=True)
@@ -183,16 +252,18 @@ class Sugar:
             data = data[data["listed"]]
         return data
 
-    @lru_cache(maxsize=32)
+    @documented_cache(maxsize=32)
     def lp_all(self, limit: int = 500, index_lp: bool = False, override: bool = True) -> pd.DataFrame:
-        """!
-        @brief Make LpSugar.all() calls and then store locally with the option to load local data.
+        """
+        Make LpSugar.all() calls and store locally with the option to load local data.
 
-        @param limit (int, optional): Number of LPs to fetch during each call. Defaults to 500.
-        @param index_lp (bool, optional): Replace index with LP address. Defaults to False.
-        @param override (bool, optional): Fetch onchain state. Defaults to True.
+        Args:
+            limit (int, optional): Number of LPs to fetch during each call. Defaults to 500.
+            index_lp (bool, optional): Replace index with LP address. Defaults to False.
+            override (bool, optional): Fetch onchain state. Defaults to True.
 
-        @return (dataframe): Formatted struct as pandas dataframe.
+        Returns:
+            pd.DataFrame: Formatted struct as pandas dataframe.
         """
         directory = "data-lp"
         path_data_raw = f"{directory}/raw_lp_all_{self.chain}.txt"
@@ -215,6 +286,15 @@ class Sugar:
         return data
 
     def _fetch_lp_all(self, limit: int) -> str:
+        """
+        Fetch lp all from LpSugar.
+
+        Args:
+            limit (int): Number of LPs to fetch during each call. Defaults to 500.
+
+        Returns:
+            str: All calls as a string.
+        """
         offset = 0
         all_calls = []
         print("\nStarting LpSugar.all() calls\n")
@@ -234,6 +314,16 @@ class Sugar:
         return str("".join(all_calls)).replace("][", ", ")
 
     def _process_lp_all(self, all_calls: str, index_lp: bool) -> pd.DataFrame:
+        """
+        Process lp all from LpSugar.
+
+        Args:
+            all_calls (str): All calls as a string.
+            index_lp (bool): Replace index with LP address.
+
+        Returns:
+            pd.DataFrame: Formatted struct as pandas dataframe.
+        """
         if self.chain == "op":
             data = pd.DataFrame(eval(all_calls), columns=config.COLUMNS_LP)
         else:
@@ -252,7 +342,7 @@ class Sugar:
             data.set_index("lp", inplace=True)
         return data
 
-    @lru_cache(maxsize=32)
+    @documented_cache(maxsize=32)
     def ve_all(
         self,
         limit: int = 800,
@@ -262,16 +352,19 @@ class Sugar:
         index_id: bool = True,
         override: bool = True,
     ) -> Tuple[pd.DataFrame, Optional[int]]:
-        """!
-        @brief Make VeSugar.all() calls and then store locally with the option to load local data.
+        """
+        Make VeSugar.all() calls and store locally with the option to load local data.
 
-        @param limit (int, optional): Number of veNFTs to fetch during each call. Defaults to 800.
-        @param columns_export (list, optional): Columns to export. Defaults to None.
-        @param columns_rename (dict, optional): Columns to rename. Defaults to None.
-        @param weights (bool, optional): Change voting amount to weights. Defaults to True.
-        @param override (bool, optional): Fetch onchain state. Defaults to True.
+        Args:
+            limit (int, optional): Number of veNFTs to fetch during each call. Defaults to 800.
+            columns_export (Tuple[str], optional): Columns to export. Defaults to None.
+            columns_rename (frozenset, optional): Columns to rename. Defaults to None.
+            weights (bool, optional): Change voting amount to weights. Defaults to True.
+            index_id (bool, optional): Use ID as index. Defaults to True.
+            override (bool, optional): Fetch onchain state. Defaults to True.
 
-        @return (tuple): Formatted struct as pandas dataframe and block number of first call.
+        Returns:
+            Tuple[pd.DataFrame, Optional[int]]: Formatted struct as pandas dataframe and block number of first call.
         """
         relay, _ = self.relay_all(filter_inactive=False, override=False)
         relay_idx = sorted(set(relay.index))
@@ -302,6 +395,17 @@ class Sugar:
         return data, block
 
     def _fetch_ve_all(self, limit: int, relay_idx: List[int], relay_len: int) -> Tuple[str, int]:
+        """
+        Fetch ve all from VeSugar.
+
+        Args:
+            limit (int): Number of veNFTs to fetch during each call. Defaults to 800.
+            relay_idx (List[int]): Relay indices.
+            relay_len (int): Length of relay indices.
+
+        Returns:
+            Tuple[str, int]: All calls as a string and block number of first call.
+        """
         all_calls = []
         _offset = 1
         _limit = limit
@@ -348,10 +452,26 @@ class Sugar:
         weights: bool,
         index_id: bool,
     ) -> pd.DataFrame:
+        """
+        Process ve all from VeSugar.
+
+        Args:
+            all_calls (str): All calls as a string.
+            columns_export (Tuple[str], optional): Columns to export. Defaults to None.
+            columns_rename (frozenset, optional): Columns to rename. Defaults to None.
+            weights (bool): Change voting amount to weights.
+            index_id (bool): Use ID as index.
+
+        Returns:
+            pd.DataFrame: Formatted struct as pandas dataframe.
+        """
         data = pd.DataFrame(eval(all_calls), columns=config.COLUMNS_VENFT)
         data.drop_duplicates(inplace=True, subset="id")
         if index_id:
             data.set_index("id", inplace=True)
+        elif index_id is False and "id" not in list(columns_export):
+            columns_export = tuple(["id"] + list(columns_export))
+
         for col in config.COLUMNS_VENFT_ETH:
             if col == "votes":
                 data[col] = data.apply(
@@ -368,6 +488,17 @@ class Sugar:
         return data
 
     def _process_ve_votes(self, votes, governance_amount, weights):
+        """
+        Process ve votes.
+
+        Args:
+            votes (str): Votes as a string.
+            governance_amount (int): Governance amount.
+            weights (bool): Change voting amount to weights.
+
+        Returns:
+            str: Processed votes.
+        """
         if not votes:
             return str([])
         if weights:
@@ -395,13 +526,14 @@ class Sugar:
         pool_names: Optional[Tuple[str]] = None,
         master_export: bool = True,
     ):
-        """!
-        @brief Filter for voters on any amount of pools. Defaults to exporting locally.
+        """
+        Filter for voters on any amount of pools. Defaults to exporting locally.
 
-        @param pool_address (str | list): Pool address or list of pool addresses
-        @param block_num (int): Block number from ve_all() call.
-        @param pool_names (list, optional): Pool names ordered in the same way as pool_address. Defaults to None.
-        @param master_export (bool, optional): Aggregate voter data into one dataframe. Defaults to True.
+        Args:
+            pool_address (Union[str, Tuple[str]]): Pool address or tuple of pool addresses.
+            block_num (int): Block number from ve_all() call.
+            pool_names (Tuple[str], optional): Pool names ordered in the same way as pool_address. Defaults to None.
+            master_export (bool, optional): Aggregate voter data into one dataframe. Defaults to True.
         """
         if isinstance(pool_address, str):
             pool_address = (pool_address,)
@@ -427,6 +559,16 @@ class Sugar:
             self._export_master_voters(data_master, block_num)
 
     def _process_voters(self, data_ve: pd.DataFrame, addy: str) -> pd.DataFrame:
+        """
+        Process voters.
+
+        Args:
+            data_ve (pd.DataFrame): Dataframe with veNFT data.
+            addy (str): Address to filter.
+
+        Returns:
+            pd.DataFrame: Formatted struct as pandas dataframe.
+        """
         matches = []
         votes = []
         for venft, row in data_ve.iterrows():
@@ -448,8 +590,24 @@ class Sugar:
         return pd.concat([total_votes, venfts], axis=1).sort_values("governance_amount", ascending=False)
 
     def _get_symbol(
-        self, data_lp: pd.DataFrame, addy: str, pool_address: Tuple[str], pool_names: Optional[Tuple[str]]
+        self,
+        data_lp: pd.DataFrame,
+        addy: str,
+        pool_address: Tuple[str],
+        pool_names: Optional[Tuple[str]],
     ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Get symbol from LpSugar.
+
+        Args:
+            data_lp (pd.DataFrame): Dataframe with LP data.
+            addy (str): Address to filter.
+            pool_address (Tuple[str]): Pool addresses.
+            pool_names (Optional[Tuple[str]]): Pool names.
+
+        Returns:
+            Tuple[Optional[str], Optional[str]]: Symbol and symbol file.
+        """
         try:
             symbol = data_lp.loc[addy, "symbol"]
             symbol_file = symbol.replace("/", "-")
@@ -459,6 +617,13 @@ class Sugar:
         return symbol, symbol_file
 
     def _export_master_voters(self, data_master: pd.DataFrame, block_num: int):
+        """
+        Export master voters.
+
+        Args:
+            data_master (pd.DataFrame): Dataframe with voter data.
+            block_num (int): Block number.
+        """
         total_votes = data_master.groupby("account")["governance_amount"].sum()
         venfts = (
             data_master.groupby("account")["locks"]
@@ -477,12 +642,13 @@ class Sugar:
         path_csv = f"{directory}/voters_{self.chain}_{block_num}_master.csv"
         self._export_csv(data, path_csv, directory)
 
-    def relay_depositors(self, mveNFT_ID, block_num):
-        """!
-        @brief Filter for depositors in a particular relay. Defaults to exporting locally.
+    def relay_depositors(self, mveNFT_ID: int, block_num: int):
+        """
+        Filter for depositors in a particular relay. Defaults to exporting locally.
 
-        @param mveNFT_ID (int): Managed veNFT ID of the relay.
-        @param block_num (int): Block number from ve_all() call.
+        Args:
+            mveNFT_ID (int): Managed veNFT ID of the relay.
+            block_num (int): Block number from ve_all() call.
         """
         cols = ("id", "account", "governance_amount", "managed_id")
         data, _ = self.ve_all(columns_export=cols, weights=False, index_id=False, override=False)
@@ -504,12 +670,13 @@ class Sugar:
         self._export_csv(data, path_csv, directory)
 
     def _export_csv(self, df: pd.DataFrame, path: str, directory: Optional[str] = None) -> None:
-        """!
-        @brief Export dataframe to csv
+        """
+        Export dataframe to csv.
 
-        @param df (pd.DataFrame): Dataframe to export
-        @param path (str): Path to export to
-        @param directory (Optional[str], optional): Directory to export to. Defaults to None.
+        Args:
+            df (pd.DataFrame): Dataframe to export.
+            path (str): Path to export to.
+            directory (Optional[str], optional): Directory to export to. Defaults to None.
         """
         if directory:
             os.makedirs(directory, exist_ok=True)

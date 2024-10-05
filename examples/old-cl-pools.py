@@ -1,11 +1,14 @@
-from sugar import Sugar
+import sys
+import os
 from dune_client.client import DuneClient
 from dune_client.query import QueryBase
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from sugar import Sugar
 import config
 
 if __name__ == "__main__":
     # old cl pools from meow query
-    # dune = DuneClient(os.environ["DUNE_API_KEY"])
     dune = DuneClient.from_env()
 
     # run and fetch query results
