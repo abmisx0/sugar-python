@@ -3,11 +3,17 @@ import dotenv
 from web3 import Web3
 import pandas as pd
 import config
+from functools import lru_cache
+from typing import Optional, List, Tuple, Union
 
 
 class Sugar:
     def __init__(
-        self, chain: str, lp_address=None, relay_address=None, ve_address=None
+        self,
+        chain: str,
+        lp_address: Optional[str] = None,
+        relay_address: Optional[str] = None,
+        ve_address: Optional[str] = None,
     ):
         """!
         @brief Class to make Sugar calls easily
@@ -24,47 +30,31 @@ class Sugar:
             chain = chain.upper()
             alchemy_key = os.environ[f"RPC_LINK_{chain}"]
             self.w3 = Web3(Web3.HTTPProvider(alchemy_key))
-            if lp_address:
-                self.lp = self.w3.eth.contract(
-                    lp_address, abi=eval(f"config.ABI_LP_SUGAR_{chain}")
-                )
-            else:
-                self.lp = self.w3.eth.contract(
-                    eval(f"config.ADDRESS_LP_SUGAR_{chain}"),
-                    abi=eval(f"config.ABI_LP_SUGAR_{chain}"),
-                )
+            self.lp = self._initialize_contract("LP", lp_address, chain)
             if chain in ["OP", "BASE"]:
-                if relay_address:
-                    self.relay = self.w3.eth.contract(
-                        relay_address, abi=eval(f"config.ABI_RELAY_SUGAR_{chain}")
-                    )
-                else:
-                    self.relay = self.w3.eth.contract(
-                        eval(f"config.ADDRESS_RELAY_SUGAR_{chain}"),
-                        abi=eval(f"config.ABI_RELAY_SUGAR_{chain}"),
-                    )
-                if ve_address:
-                    self.ve = self.w3.eth.contract(
-                        ve_address, abi=eval(f"config.ABI_VE_SUGAR_{chain}")
-                    )
-                else:
-                    self.ve = self.w3.eth.contract(
-                        eval(f"config.ADDRESS_VE_SUGAR_{chain}"),
-                        abi=eval(f"config.ABI_VE_SUGAR_{chain}"),
-                    )
-            self.connectors = eval(f"config.CONNECTORS_{chain}")
-        except Exception:
-            print(
-                "ERROR: Incorrect chain string. Only these strings accepted: op, base, mode, bob"
+                self.relay = self._initialize_contract("RELAY", relay_address, chain)
+                self.ve = self._initialize_contract("VE", ve_address, chain)
+            self.connectors = getattr(config, f"CONNECTORS_{chain}")
+        except Exception as e:
+            raise ValueError(f"Error initializing Sugar: {str(e)}")
+
+    def _initialize_contract(self, contract_type: str, address: Optional[str], chain: str):
+        if address:
+            return self.w3.eth.contract(address, abi=getattr(config, f"ABI_{contract_type}_SUGAR_{chain}"))
+        else:
+            return self.w3.eth.contract(
+                getattr(config, f"ADDRESS_{contract_type}_SUGAR_{chain}"),
+                abi=getattr(config, f"ABI_{contract_type}_SUGAR_{chain}"),
             )
 
+    @lru_cache(maxsize=32)
     def relay_all(
         self,
-        columns_export=None,
-        columns_rename=None,
-        filter_inactive=True,
-        override=True,
-    ):
+        columns_export: Optional[Tuple[str]] = None,
+        columns_rename: Optional[frozenset] = None,
+        filter_inactive: bool = True,
+        override: bool = True,
+    ) -> Tuple[pd.DataFrame, Optional[int]]:
         """!
         @brief Make RelaySugar.all() calls and then store locally with the option to load local data.
 
@@ -81,59 +71,43 @@ class Sugar:
         if override:
             block = self.w3.eth.block_number
             print("\nStating RelaySugar.all() call\n")
-            call = self.relay.functions.all(
-                "0x0000000000000000000000000000000000000000"
-            ).call()
-            # raw data store
-            try:
-                f = open(path_data_raw, "w")
-            except Exception:
-                os.mkdir(f"{directory}")
-                f = open(path_data_raw, "w")
-            f.write(str(call))
-            f.close()
+            call = self.relay.functions.all("0x0000000000000000000000000000000000000000").call()
+            os.makedirs(directory, exist_ok=True)
+            call = str(call)
+            with open(path_data_raw, "w") as f:
+                f.write(call)
+        else:
+            with open(path_data_raw, "r") as f:
+                call = f.read()
+            block = None
 
-        # read relay data
-        f = open(path_data_raw, "r")
-        data_raw = f.read()
-        f.close()
+        if block:
+            print(f"{block = }")
 
-        try:
-            print(f"\n{block = }\n")
-        except Exception:
-            pass
-
-        data = pd.DataFrame(eval(data_raw), columns=config.COLUMNS_RELAY)
+        data = pd.DataFrame(eval(call), columns=config.COLUMNS_RELAY)
         data.set_index("venft_id", inplace=True)
         for col in config.COLUMNS_RELAY_ETH:
             if col == "votes":
                 data[col] = data.apply(
-                    lambda row: self._process_votes(
-                        row[col], row["used_voting_amount"]
-                    ),
+                    lambda row: self._process_votes(row[col], row["used_voting_amount"]),
                     axis=1,
                 )
             else:
-                data[col] = data[col].apply(
-                    lambda x: self.w3.from_wei(x, "ether").__round__(3)
-                )
+                data[col] = data[col].apply(lambda x: self.w3.from_wei(x, "ether").__round__(3))
 
-        # export data
         if filter_inactive:
             data = data[~data["inactive"]]
         if columns_export:
-            data = data[columns_export]
+            data = data[list(columns_export)]
         if columns_rename:
-            data.rename(columns=columns_rename, inplace=True)
+            data.rename(columns=dict(columns_rename), inplace=True)
         data.sort_index(inplace=True)
 
         if override:
-            print(data.info())
             path_csv = f"{directory}/relay_all_{self.chain}.csv"
             self._export_csv(data, path_csv, directory)
-            return data, block
-        else:
-            return data, None
+
+        return data, block
 
     def _process_votes(self, votes, used_voting_amount):
         if not votes:
@@ -142,84 +116,14 @@ class Sugar:
             [
                 (
                     tup[0],
-                    (self.w3.from_wei(tup[1], "ether") / used_voting_amount)
-                    .__round__(3)
-                    .__float__(),
+                    (self.w3.from_wei(tup[1], "ether") / used_voting_amount).__round__(3).__float__(),
                 )
                 for tup in votes
             ]
         )
 
-    def lp_all(self, limit=500, index_lp=False, override=True):
-        """!
-        @brief Make LpSugar.all() calls and then store locally with the option to load local data.
-
-        @param limit (int, optional): Number of LPs to fetch during each call. Defaults to 500.
-        @param index_lp (bool, optional): Replace index with LP address. Defaults to False.
-        @param override (bool, optional): Fetch onchain state. Defaults to True.
-
-        @return (dataframe): Formatted struct as pandas dataframe.
-        """
-        directory = "data-lp"
-        path_data_raw = f"{directory}/raw_lp_all_{self.chain}.txt"
-
-        if override:
-            offset = 0
-            all_calls = []
-            print("\nStating LpSugar.all() calls")
-            while True:
-                try:
-                    call = self.lp.functions.all(
-                        limit,
-                        offset,
-                    ).call()
-                    if not call:
-                        break
-                    all_calls.extend(str(call))
-                    offset += limit
-                    print(f"{offset = }")
-                except Exception:
-                    break
-            all_calls = str("".join(all_calls)).replace("][", ", ")
-            # raw data store
-            try:
-                f = open(path_data_raw, "w")
-            except Exception:
-                os.mkdir(f"{directory}")
-                f = open(path_data_raw, "w")
-            f.write(all_calls)
-            f.close()
-
-        # read raw data
-        f = open(path_data_raw, "r")
-        data_raw = f.read()
-        f.close()
-
-        if self.chain == "op":
-            data = pd.DataFrame(eval(data_raw), columns=config.COLUMNS_LP)
-        else:
-            data = pd.DataFrame(eval(data_raw), columns=config.COLUMNS_LP[0:-1])
-        data.drop_duplicates(inplace=True)
-
-        # load lp_tokens data to give CL pairs a name like on the FE
-        # note: turn this into a method later ??
-        tokens = self.lp_tokens(listed=False, override=False)
-        data_cl = data[data["symbol"] == ""]
-        data_cl["symbol"] = data_cl.apply(
-            lambda row: f"CL{row['type']}-{tokens.loc[row['token0'], 'symbol']}/{tokens.loc[row['token1'], 'symbol']}",
-            axis=1,
-        )
-        data.update(data_cl)
-
-        if index_lp:
-            data.set_index("lp", inplace=True)
-        if override:
-            print(data.info())
-            path_csv = f"{directory}/lp_all_{self.chain}.csv"
-            self._export_csv(data, path_csv, directory)
-        return data
-
-    def lp_tokens(self, limit=1000, listed=True, override=True):
+    @lru_cache(maxsize=32)
+    def lp_tokens(self, limit: int = 1000, listed: bool = True, override: bool = True) -> pd.DataFrame:
         """!
         @brief Make LpSugar.tokens() calls and then store locally with the option to load local data.
 
@@ -233,59 +137,131 @@ class Sugar:
         path_data_raw = f"{directory}/raw_lp_tokens_{self.chain}.txt"
 
         if override:
-            offset = 0
-            all_calls = []
-            print("\nStating LpSugar.tokens() calls")
-            while True:
-                try:
-                    call = self.lp.functions.tokens(
-                        limit,
-                        offset,
-                        "0x0000000000000000000000000000000000000000",
-                        self.connectors,
-                    ).call()
-                    if len(call) == len(self.connectors):
-                        break
-                    all_calls.extend(str(call))
-                    offset += limit
-                    print(f"{offset = }")
-                except Exception:
-                    break
-            all_calls = str("".join(all_calls)).replace("][", ", ")
-            # raw data store
+            all_calls = self._fetch_lp_tokens(limit)
+            os.makedirs(directory, exist_ok=True)
+            with open(path_data_raw, "w") as f:
+                f.write(all_calls)
+        else:
+            with open(path_data_raw, "r") as f:
+                all_calls = f.read()
+
+        data = self._process_lp_tokens(all_calls, listed)
+
+        if override:
+            path_csv = f"{directory}/lp_tokens_{self.chain}.csv"
+            self._export_csv(data, path_csv, directory)
+
+        return data
+
+    def _fetch_lp_tokens(self, limit: int) -> str:
+        offset = 0
+        all_calls = []
+        print("\nStarting LpSugar.tokens() calls\n")
+        while True:
             try:
-                f = open(path_data_raw, "w")
+                call = self.lp.functions.tokens(
+                    limit,
+                    offset,
+                    "0x0000000000000000000000000000000000000000",
+                    self.connectors,
+                ).call()
+                if len(call) == len(self.connectors):
+                    break
+                all_calls.extend(str(call))
+                offset += limit
+                print(f"{offset = }")
             except Exception:
-                os.mkdir(f"{directory}")
-                f = open(path_data_raw, "w")
-            f.write(all_calls)
-            f.close()
+                break
+        return str("".join(all_calls)).replace("][", ", ")
 
-        # read raw data
-        f = open(path_data_raw, "r")
-        data_raw = f.read()
-        f.close()
-
-        data = pd.DataFrame(eval(data_raw), columns=config.COLUMNS_TOKEN)
+    def _process_lp_tokens(self, all_calls: str, listed: bool) -> pd.DataFrame:
+        data = pd.DataFrame(eval(all_calls), columns=config.COLUMNS_TOKEN)
         data.drop_duplicates(inplace=True)
         data.set_index("token_address", inplace=True)
         data.drop("account_balance", axis=1, inplace=True)
         if listed:
             data = data[data["listed"]]
-        if override:
-            print(data.info())
-            path_csv = f"{directory}/lp_tokens_{self.chain}.csv"
-            self._export_csv(data, path_csv, directory)
         return data
 
+    @lru_cache(maxsize=32)
+    def lp_all(self, limit: int = 500, index_lp: bool = False, override: bool = True) -> pd.DataFrame:
+        """!
+        @brief Make LpSugar.all() calls and then store locally with the option to load local data.
+
+        @param limit (int, optional): Number of LPs to fetch during each call. Defaults to 500.
+        @param index_lp (bool, optional): Replace index with LP address. Defaults to False.
+        @param override (bool, optional): Fetch onchain state. Defaults to True.
+
+        @return (dataframe): Formatted struct as pandas dataframe.
+        """
+        directory = "data-lp"
+        path_data_raw = f"{directory}/raw_lp_all_{self.chain}.txt"
+
+        if override:
+            all_calls = self._fetch_lp_all(limit)
+            os.makedirs(directory, exist_ok=True)
+            with open(path_data_raw, "w") as f:
+                f.write(all_calls)
+        else:
+            with open(path_data_raw, "r") as f:
+                all_calls = f.read()
+
+        data = self._process_lp_all(all_calls, index_lp)
+
+        if override:
+            path_csv = f"{directory}/lp_all_{self.chain}.csv"
+            self._export_csv(data, path_csv, directory)
+
+        return data
+
+    def _fetch_lp_all(self, limit: int) -> str:
+        offset = 0
+        all_calls = []
+        print("\nStarting LpSugar.all() calls\n")
+        while True:
+            try:
+                call = self.lp.functions.all(
+                    limit,
+                    offset,
+                ).call()
+                if not call:
+                    break
+                all_calls.extend(str(call))
+                offset += limit
+                print(f"{offset = }")
+            except Exception:
+                break
+        return str("".join(all_calls)).replace("][", ", ")
+
+    def _process_lp_all(self, all_calls: str, index_lp: bool) -> pd.DataFrame:
+        if self.chain == "op":
+            data = pd.DataFrame(eval(all_calls), columns=config.COLUMNS_LP)
+        else:
+            data = pd.DataFrame(eval(all_calls), columns=config.COLUMNS_LP[0:-1])
+        data.drop_duplicates(inplace=True)
+
+        tokens = self.lp_tokens(listed=False, override=False)
+        data_cl = data[data["symbol"] == ""]
+        data_cl["symbol"] = data_cl.apply(
+            lambda row: f"CL{row['type']}-{tokens.loc[row['token0'], 'symbol']}/{tokens.loc[row['token1'], 'symbol']}",
+            axis=1,
+        )
+        data.update(data_cl)
+
+        if index_lp:
+            data.set_index("lp", inplace=True)
+        return data
+
+    @lru_cache(maxsize=32)
     def ve_all(
         self,
-        limit=800,
-        columns_export=None,
-        columns_rename=None,
-        weights=True,
-        override=True,
-    ):
+        limit: int = 800,
+        columns_export: Optional[Tuple[str]] = None,
+        columns_rename: Optional[frozenset] = None,
+        weights: bool = True,
+        index_id: bool = True,
+        override: bool = True,
+    ) -> Tuple[pd.DataFrame, Optional[int]]:
         """!
         @brief Make VeSugar.all() calls and then store locally with the option to load local data.
 
@@ -298,99 +274,98 @@ class Sugar:
         @return (tuple): Formatted struct as pandas dataframe and block number of first call.
         """
         relay, _ = self.relay_all(filter_inactive=False, override=False)
-        relay_idx = set(relay.index)
-        relay_idx = sorted(relay_idx)
+        relay_idx = sorted(set(relay.index))
         relay_len = len(relay_idx)
 
         directory = "data-ve"
         path_data_raw = f"{directory}/raw_ve_all_{self.chain}.txt"
 
         if override:
-            all_calls = []
-            _offset = 1
-            _limit = limit
-            block = self.w3.eth.block_number
-            i = 0
-            count = 0
-            print("\nStating veSugar.all() calls")
-            while True:
-                # efficient pass of relay veNFTs
-                if i < relay_len:
-                    relay_num = relay_idx[i]
-                    if _offset <= relay_num < (_offset + _limit):
-                        if relay_num == _offset:
-                            _offset += 1
-                        elif relay_num > _offset:
-                            _limit = relay_num - _offset
-                        if relay_num < _offset:
-                            i += 1
-                            count = 0
-                    elif relay_num < _offset:
+            all_calls, block = self._fetch_ve_all(limit, relay_idx, relay_len)
+            os.makedirs(directory, exist_ok=True)
+            with open(path_data_raw, "w") as f:
+                f.write(all_calls)
+        else:
+            with open(path_data_raw, "r") as f:
+                all_calls = f.read()
+            block = None
+
+        if block:
+            print(f"\n{block = }")
+
+        data = self._process_ve_all(all_calls, columns_export, columns_rename, weights, index_id)
+
+        if override:
+            path_csv = f"{directory}/ve_all_{self.chain}.csv"
+            self._export_csv(data, path_csv, directory)
+
+        return data, block
+
+    def _fetch_ve_all(self, limit: int, relay_idx: List[int], relay_len: int) -> Tuple[str, int]:
+        all_calls = []
+        _offset = 1
+        _limit = limit
+        block = self.w3.eth.block_number
+        i = 0
+        count = 0
+        print("\nStarting veSugar.all() calls\n")
+        while True:
+            if i < relay_len:
+                relay_num = relay_idx[i]
+                if _offset <= relay_num < (_offset + _limit):
+                    if relay_num == _offset:
+                        _offset += 1
+                    elif relay_num > _offset:
+                        _limit = relay_num - _offset
+                    if relay_num < _offset:
                         i += 1
                         count = 0
-                try:
-                    call = self.ve.functions.all(_limit, _offset).call()
-                    if not call:
-                        break
-                    if count == 0:
-                        _limit = limit
-                    all_calls.extend(str(call))
-                    _offset = call[-1][0] + 1
-                    print(f"{_offset = }")
-                    if call:
-                        del call
-                except Exception:
-                    _limit = max(_limit // 2, 1)
-                    if _limit == 1:
-                        _offset += 1
-                        _limit = limit
-                    count += 1
-            all_calls = str("".join(all_calls)).replace("][", ", ")
+                elif relay_num < _offset:
+                    i += 1
+                    count = 0
             try:
-                f = open(path_data_raw, "w")
+                call = self.ve.functions.all(_limit, _offset).call()
+                if not call:
+                    break
+                if count == 0:
+                    _limit = limit
+                all_calls.extend(str(call))
+                _offset = call[-1][0] + 1
+                print(f"{_offset = }")
             except Exception:
-                os.mkdir(f"{directory}")
-                f = open(path_data_raw, "w")
-            f.write(all_calls)
-            f.close()
+                _limit = max(_limit // 2, 1)
+                if _limit == 1:
+                    _offset += 1
+                    _limit = limit
+                count += 1
+        return str("".join(all_calls)).replace("][", ", "), block
 
-        # read raw data
-        f = open(path_data_raw, "r")
-        data_raw = f.read()
-        f.close()
-
-        try:
-            print(f"\n{block = }\n")
-        except Exception:
-            pass
-
-        data = pd.DataFrame(eval(data_raw), columns=config.COLUMNS_VENFT)
+    def _process_ve_all(
+        self,
+        all_calls: str,
+        columns_export: Optional[Tuple[str]],
+        columns_rename: Optional[frozenset],
+        weights: bool,
+        index_id: bool,
+    ) -> pd.DataFrame:
+        data = pd.DataFrame(eval(all_calls), columns=config.COLUMNS_VENFT)
         data.drop_duplicates(inplace=True, subset="id")
-        data.set_index("id", inplace=True)
+        if index_id:
+            data.set_index("id", inplace=True)
         for col in config.COLUMNS_VENFT_ETH:
             if col == "votes":
                 data[col] = data.apply(
-                    lambda row: self._process_ve_votes(
-                        row[col], row["governance_amount"], weights
-                    ),
+                    lambda row: self._process_ve_votes(row[col], row["governance_amount"], weights),
                     axis=1,
                 )
             else:
-                data[col] = data[col].apply(
-                    lambda x: self.w3.from_wei(x, "ether").__round__(3)
-                )
+                data[col] = data[col].apply(lambda x: self.w3.from_wei(x, "ether").__round__(3))
 
         if columns_export:
-            data = data[columns_export]
+            data = data[list(columns_export)]
         if columns_rename:
-            data.rename(columns=columns_rename, inplace=True)
-        if override:
-            print(data.info())
-            path_csv = f"{directory}/ve_all_{self.chain}.csv"
-            self._export_csv(data, path_csv, directory)
-            return data, block
-        else:
-            return data, None
+            data.rename(columns=dict(columns_rename), inplace=True)
+        return data
 
     def _process_ve_votes(self, votes, governance_amount, weights):
         if not votes:
@@ -410,13 +385,16 @@ class Sugar:
             )
         else:
             return str(
-                [
-                    (tup[0], self.w3.from_wei(tup[1], "ether").__round__(3).__float__())
-                    for tup in votes
-                ]
+                [(tup[0], self.w3.from_wei(tup[1], "ether").__round__(3).__float__()) for tup in votes]
             )
 
-    def voters(self, pool_address, block_num, pool_names=None, master_export=True):
+    def voters(
+        self,
+        pool_address: Union[str, Tuple[str]],
+        block_num: int,
+        pool_names: Optional[Tuple[str]] = None,
+        master_export: bool = True,
+    ):
         """!
         @brief Filter for voters on any amount of pools. Defaults to exporting locally.
 
@@ -426,83 +404,78 @@ class Sugar:
         @param master_export (bool, optional): Aggregate voter data into one dataframe. Defaults to True.
         """
         if isinstance(pool_address, str):
-            pool_address = [pool_address]
-        cols = ["account", "governance_amount", "votes"]
+            pool_address = (pool_address,)
+        cols = ("account", "governance_amount", "votes")
         data_ve, _ = self.ve_all(columns_export=cols, weights=False, override=False)
         data_lp = self.lp_all(index_lp=True, override=False)
 
-        flg_master = True
+        data_master = pd.DataFrame()
         for addy in pool_address:
-            matches = []
-            votes = []
-            for venft, row in data_ve.iterrows():
-                if row["governance_amount"] == 0:
-                    continue
-                ray = eval(row["votes"])
-                for tup in ray:
-                    if tup[0].lower() == addy.lower():
-                        matches.append(venft)
-                        votes.append(tup[1])
-
-            # use matches to filter old dataset with matching addy to create a new dataset
-            data = data_ve.loc[matches, :].copy()
-            data["governance_amount"] = votes
-            data["locks"] = matches  # new data series
-
-            total_votes = data.groupby("account")["governance_amount"].sum()
-            venfts = (
-                data.groupby("account")["locks"]
-                .apply(list)
-                .apply(lambda x: str(x).strip("[]"))
-            )
-
-            data = pd.concat([total_votes, venfts], axis=1).sort_values(
-                "governance_amount", ascending=False
-            )
-
-            try:
-                symbol = data_lp.loc[addy, "symbol"]
-                symbol_file = symbol.replace("/", "-")
-            except Exception:
-                symbol = pool_names[pool_address.index(addy)] if pool_names else None
-                symbol_file = symbol.replace("/", "-") if symbol else None
-
-            directory = "data-voters"
-            if symbol_file:
-                path_csv = (
-                    f"{directory}/voters_{self.chain}_{block_num}_{symbol_file}.csv"
-                )
-            else:
-                path_csv = f"{directory}/voters_{self.chain}_{block_num}_{addy}.csv"
+            data = self._process_voters(data_ve, addy)
+            symbol, symbol_file = self._get_symbol(data_lp, addy, pool_address, pool_names)
 
             if master_export:
                 data_mod = data.copy()
-                data_mod["name"] = symbol  # new data series
-                if flg_master:
-                    data_master = data_mod.copy()
-                    flg_master = False
-                else:
-                    data_master = pd.concat([data_master, data_mod])
+                data_mod["name"] = symbol
+                data_master = pd.concat([data_master, data_mod])
             else:
+                directory = "data-voters"
+                path_csv = f"{directory}/voters_{self.chain}_{block_num}_{symbol_file or addy}.csv"
                 self._export_csv(data, path_csv, directory)
 
         if master_export:
-            total_votes = data_master.groupby("account")["governance_amount"].sum()
-            venfts = (
-                data_master.groupby("account")["locks"]
-                .apply(list)
-                .apply(lambda x: str(x).strip("[]").replace("'", ""))
-            )
-            names = (
-                data_master.groupby("account")["name"]
-                .apply(list)
-                .apply(lambda x: str(x).strip("['']").replace("'", ""))
-            )
-            data = pd.concat([total_votes, names, venfts], axis=1).sort_values(
-                "governance_amount", ascending=False
-            )
-            path_csv = f"{directory}/voters_{self.chain}_{block_num}_master.csv"
-            self._export_csv(data, path_csv, directory)
+            self._export_master_voters(data_master, block_num)
+
+    def _process_voters(self, data_ve: pd.DataFrame, addy: str) -> pd.DataFrame:
+        matches = []
+        votes = []
+        for venft, row in data_ve.iterrows():
+            if row["governance_amount"] == 0:
+                continue
+            ray = eval(row["votes"])
+            for tup in ray:
+                if tup[0].lower() == addy.lower():
+                    matches.append(venft)
+                    votes.append(tup[1])
+
+        data = data_ve.loc[matches, :].copy()
+        data["governance_amount"] = votes
+        data["locks"] = matches
+
+        total_votes = data.groupby("account")["governance_amount"].sum()
+        venfts = data.groupby("account")["locks"].apply(list).apply(lambda x: str(x).strip("[]"))
+
+        return pd.concat([total_votes, venfts], axis=1).sort_values("governance_amount", ascending=False)
+
+    def _get_symbol(
+        self, data_lp: pd.DataFrame, addy: str, pool_address: Tuple[str], pool_names: Optional[Tuple[str]]
+    ) -> Tuple[Optional[str], Optional[str]]:
+        try:
+            symbol = data_lp.loc[addy, "symbol"]
+            symbol_file = symbol.replace("/", "-")
+        except Exception:
+            symbol = pool_names[pool_address.index(addy)] if pool_names else None
+            symbol_file = symbol.replace("/", "-") if symbol else None
+        return symbol, symbol_file
+
+    def _export_master_voters(self, data_master: pd.DataFrame, block_num: int):
+        total_votes = data_master.groupby("account")["governance_amount"].sum()
+        venfts = (
+            data_master.groupby("account")["locks"]
+            .apply(list)
+            .apply(lambda x: str(x).strip("[]").replace("'", ""))
+        )
+        names = (
+            data_master.groupby("account")["name"]
+            .apply(list)
+            .apply(lambda x: str(x).strip("['']").replace("'", ""))
+        )
+        data = pd.concat([total_votes, names, venfts], axis=1).sort_values(
+            "governance_amount", ascending=False
+        )
+        directory = "data-voters"
+        path_csv = f"{directory}/voters_{self.chain}_{block_num}_master.csv"
+        self._export_csv(data, path_csv, directory)
 
     def relay_depositors(self, mveNFT_ID, block_num):
         """!
@@ -511,58 +484,57 @@ class Sugar:
         @param mveNFT_ID (int): Managed veNFT ID of the relay.
         @param block_num (int): Block number from ve_all() call.
         """
-        cols = ["account", "governance_amount", "managed_id"]
-        data, _ = self.ve_all(columns_export=cols, weights=False, override=False)
+        cols = ("id", "account", "governance_amount", "managed_id")
+        data, _ = self.ve_all(columns_export=cols, weights=False, index_id=False, override=False)
         data = data[data["managed_id"] == mveNFT_ID]
 
-        data["locks"] = data.index
-        total_votes = data.groupby("account")["governance_amount"].sum()
-        venfts = (
-            data.groupby("account")["locks"]
-            .apply(list)
-            .apply(lambda x: str(x).strip("[]"))
+        grouped = (
+            data.groupby("account")
+            .agg({"governance_amount": "sum", "id": lambda x: str(list(x)).strip("[]")})
+            .rename(columns={"id": "locks"})
         )
-        data = pd.concat([total_votes, venfts], axis=1).sort_values(
-            "governance_amount", ascending=False
-        )
+
+        data = grouped.sort_values("governance_amount", ascending=False)
 
         relay, _ = self.relay_all(filter_inactive=False, override=False)
         relay_name = relay.loc[mveNFT_ID, "name"].replace(" ", "_")
 
-        print(data.info())
-
         directory = "data-relay-depositors"
-        path_csv = (
-            f"{directory}/relay_depositors_{self.chain}_{block_num}_{relay_name}.csv"
-        )
+        path_csv = f"{directory}/relay_depositors_{self.chain}_{block_num}_{relay_name}.csv"
         self._export_csv(data, path_csv, directory)
 
-    def _export_csv(self, df, path, directory=None):
-        try:
-            df.to_csv(path)
-        except Exception:
-            os.mkdir(f"{directory}")
-            df.to_csv(path)
+    def _export_csv(self, df: pd.DataFrame, path: str, directory: Optional[str] = None) -> None:
+        """!
+        @brief Export dataframe to csv
+
+        @param df (pd.DataFrame): Dataframe to export
+        @param path (str): Path to export to
+        @param directory (Optional[str], optional): Directory to export to. Defaults to None.
+        """
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        df.to_csv(path, index=True)
 
 
 if __name__ == "__main__":
     ##################### BASE #####################
     sugar = Sugar("base")
-    # sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
-    # sugar.lp_tokens(listed=False)
-    # sugar.lp_all()
+    sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
+    sugar.lp_tokens(listed=False)
+    sugar.lp_all()
 
-    # data, block_num = sugar.ve_all(
-    #     columns_export=config.COLUMNS_VENFT_EXPORT,
-    #     columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
-    # )
-    block_num = 20612812
+    data, block_num = sugar.ve_all(
+        columns_export=config.COLUMNS_VENFT_EXPORT,
+        columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
+    )
+    # block_num = 20657276
 
-    pools = [
+    pools = (
         "0x70aCDF2Ad0bf2402C957154f944c19Ef4e1cbAE1",
         "0x4e962BB3889Bf030368F56810A9c96B83CB3E778",
-    ]
-    # sugar.voters(pools, block_num, master_export=False)
+    )
+    sugar.voters(pools, block_num, master_export=False)
+    sugar.voters(pools, block_num, master_export=True)
 
     sugar.relay_depositors(12435, block_num)
 

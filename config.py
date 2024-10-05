@@ -16,7 +16,7 @@ ADDRESS_VOTER_OP = "0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C"
 
 ADDRESS_UNIVERSALROUTER_BASE = "0x6Cb442acF35158D5eDa88fe602221b67B400Be3E"
 
-CONNECTORS_BASE = [
+CONNECTORS_BASE = (
     "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  # USDC
     "0x940181a94A35A4569E4529A3CDfB74e38FD98631",  # AERO
     "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb",  # DAI
@@ -25,8 +25,8 @@ CONNECTORS_BASE = [
     "0xB79DD08EA68A908A97220C76d19A6aA9cBDE4376",  # USD+
     "0xf7A0dd3317535eC4f4d29ADF9d620B3d8D5D5069",  # stERN
     "0xCfA3Ef56d303AE4fAabA0592388F19d7C3399FB4",  # eUSD
-]
-CONNECTORS_OP = [
+)
+CONNECTORS_OP = (
     "0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db",  # VELO
     "0x4200000000000000000000000000000000000042",  # OP
     "0x4200000000000000000000000000000000000006",  # WETH
@@ -46,20 +46,20 @@ CONNECTORS_OP = [
     "0xc40F949F8a4e094D1b49a23ea9241D289B7b2819",  # LUSD
     "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",  # USDT
     "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",  # USDC
-]
-CONNECTORS_MODE = [
+)
+CONNECTORS_MODE = (
     "0x4200000000000000000000000000000000000006",  # WETH
     "0xd988097fb8612cc24eeC14542bC03424c656005f",  # USDC
     "0xDfc7C877a950e49D2610114102175A06C2e3167a",  # MODE
-]
-CONNECTORS_BOB = [
+)
+CONNECTORS_BOB = (
     "0x4200000000000000000000000000000000000006",  # WETH
     "0xe75D0fB2C24A55cA1e3F96781a2bCC7bdba058F0",  # USDC.e
     "0x03C7054BCB39f7b2e5B2c7AcB37583e32D70Cfa3",  # WBTC
     "0xBBa2eF945D523C4e2608C9E1214C2Cc64D4fc2e2",  # tBTC
-]
+)
 
-COLUMNS_LP = [
+COLUMNS_LP = (
     "lp",
     "symbol",
     "decimals",
@@ -87,15 +87,15 @@ COLUMNS_LP = [
     "token1_fees",
     "nfpm",
     "alm",
-]
-COLUMNS_TOKEN = [
+)
+COLUMNS_TOKEN = (
     "token_address",
     "symbol",
     "decimals",
     "account_balance",
     "listed",
-]
-COLUMNS_VENFT = [
+)
+COLUMNS_VENFT = (
     "id",
     "account",
     "decimals",
@@ -110,15 +110,15 @@ COLUMNS_VENFT = [
     "permanent",
     "delegate_id",
     "managed_id",
-]
-COLUMNS_VENFT_ETH = [
+)
+COLUMNS_VENFT_ETH = (
     "amount",
     "voting_amount",
     "governance_amount",
     "rebase_amount",
     "votes",
-]
-COLUMNS_RELAY = [
+)
+COLUMNS_RELAY = (
     "venft_id",
     "decimals",
     "amount",  # locked balance being managed
@@ -135,15 +135,15 @@ COLUMNS_RELAY = [
     "inactive",
     "name",
     "account_venfts",
-]
-COLUMNS_RELAY_ETH = [
+)
+COLUMNS_RELAY_ETH = (
     "amount",
     "voting_amount",
     "used_voting_amount",
     "votes",
     "compounded",
-]
-COLUMNS_VENFT_EXPORT = [
+)
+COLUMNS_VENFT_EXPORT = (
     "account",
     "amount",  # locked balance
     "voting_amount",  # ve balance (accounts for voting decay)
@@ -152,16 +152,16 @@ COLUMNS_VENFT_EXPORT = [
     "expires_at",
     "votes",
     "managed_id",
-]
-COLUMNS_VENFT_EXPORT_RENAME = {"votes": "votes (lp, weight)"}
-COLUMNS_RELAY_EXPORT = [
+)
+COLUMNS_VENFT_EXPORT_RENAME = frozenset({"votes": "votes (lp, weight)"}.items())
+COLUMNS_RELAY_EXPORT = (
     "name",
     "manager",
     "voting_amount",
     "used_voting_amount",
     "votes",
-]
-COLUMNS_RELAY_EXPORT_RENAME = {"votes": "votes (lp, weight)"}
+)
+COLUMNS_RELAY_EXPORT_RENAME = frozenset({"votes": "votes (lp, weight)"}.items())
 
 ABI_LP_SUGAR_OP = '[{"stateMutability":"nonpayable","type":"constructor","inputs":[{"name":"_voter","type":"address"},{"name":"_registry","type":"address"},{"name":"_convertor","type":"address"},{"name":"_slipstream_helper","type":"address"},{"name":"_alm_factory","type":"address"}],"outputs":[]},{"stateMutability":"view","type":"function","name":"forSwaps","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"lp","type":"address"},{"name":"type","type":"int24"},{"name":"token0","type":"address"},{"name":"token1","type":"address"},{"name":"factory","type":"address"},{"name":"pool_fee","type":"uint256"}]}]},{"stateMutability":"view","type":"function","name":"tokens","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"},{"name":"_account","type":"address"},{"name":"_addresses","type":"address[]"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"token_address","type":"address"},{"name":"symbol","type":"string"},{"name":"decimals","type":"uint8"},{"name":"account_balance","type":"uint256"},{"name":"listed","type":"bool"}]}]},{"stateMutability":"view","type":"function","name":"all","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"lp","type":"address"},{"name":"symbol","type":"string"},{"name":"decimals","type":"uint8"},{"name":"liquidity","type":"uint256"},{"name":"type","type":"int24"},{"name":"tick","type":"int24"},{"name":"sqrt_ratio","type":"uint160"},{"name":"token0","type":"address"},{"name":"reserve0","type":"uint256"},{"name":"staked0","type":"uint256"},{"name":"token1","type":"address"},{"name":"reserve1","type":"uint256"},{"name":"staked1","type":"uint256"},{"name":"gauge","type":"address"},{"name":"gauge_liquidity","type":"uint256"},{"name":"gauge_alive","type":"bool"},{"name":"fee","type":"address"},{"name":"bribe","type":"address"},{"name":"factory","type":"address"},{"name":"emissions","type":"uint256"},{"name":"emissions_token","type":"address"},{"name":"pool_fee","type":"uint256"},{"name":"unstaked_fee","type":"uint256"},{"name":"token0_fees","type":"uint256"},{"name":"token1_fees","type":"uint256"},{"name":"nfpm","type":"address"},{"name":"alm","type":"address"}]}]},{"stateMutability":"view","type":"function","name":"byIndex","inputs":[{"name":"_index","type":"uint256"}],"outputs":[{"name":"","type":"tuple","components":[{"name":"lp","type":"address"},{"name":"symbol","type":"string"},{"name":"decimals","type":"uint8"},{"name":"liquidity","type":"uint256"},{"name":"type","type":"int24"},{"name":"tick","type":"int24"},{"name":"sqrt_ratio","type":"uint160"},{"name":"token0","type":"address"},{"name":"reserve0","type":"uint256"},{"name":"staked0","type":"uint256"},{"name":"token1","type":"address"},{"name":"reserve1","type":"uint256"},{"name":"staked1","type":"uint256"},{"name":"gauge","type":"address"},{"name":"gauge_liquidity","type":"uint256"},{"name":"gauge_alive","type":"bool"},{"name":"fee","type":"address"},{"name":"bribe","type":"address"},{"name":"factory","type":"address"},{"name":"emissions","type":"uint256"},{"name":"emissions_token","type":"address"},{"name":"pool_fee","type":"uint256"},{"name":"unstaked_fee","type":"uint256"},{"name":"token0_fees","type":"uint256"},{"name":"token1_fees","type":"uint256"},{"name":"nfpm","type":"address"},{"name":"alm","type":"address"}]}]},{"stateMutability":"view","type":"function","name":"positions","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"},{"name":"_account","type":"address"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"id","type":"uint256"},{"name":"lp","type":"address"},{"name":"liquidity","type":"uint256"},{"name":"staked","type":"uint256"},{"name":"amount0","type":"uint256"},{"name":"amount1","type":"uint256"},{"name":"staked0","type":"uint256"},{"name":"staked1","type":"uint256"},{"name":"unstaked_earned0","type":"uint256"},{"name":"unstaked_earned1","type":"uint256"},{"name":"emissions_earned","type":"uint256"},{"name":"tick_lower","type":"int24"},{"name":"tick_upper","type":"int24"},{"name":"sqrt_ratio_lower","type":"uint160"},{"name":"sqrt_ratio_upper","type":"uint160"},{"name":"alm","type":"address"}]}]},{"stateMutability":"view","type":"function","name":"positionsByFactory","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"},{"name":"_account","type":"address"},{"name":"_factory","type":"address"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"id","type":"uint256"},{"name":"lp","type":"address"},{"name":"liquidity","type":"uint256"},{"name":"staked","type":"uint256"},{"name":"amount0","type":"uint256"},{"name":"amount1","type":"uint256"},{"name":"staked0","type":"uint256"},{"name":"staked1","type":"uint256"},{"name":"unstaked_earned0","type":"uint256"},{"name":"unstaked_earned1","type":"uint256"},{"name":"emissions_earned","type":"uint256"},{"name":"tick_lower","type":"int24"},{"name":"tick_upper","type":"int24"},{"name":"sqrt_ratio_lower","type":"uint160"},{"name":"sqrt_ratio_upper","type":"uint160"},{"name":"alm","type":"address"}]}]},{"stateMutability":"view","type":"function","name":"epochsLatest","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"ts","type":"uint256"},{"name":"lp","type":"address"},{"name":"votes","type":"uint256"},{"name":"emissions","type":"uint256"},{"name":"bribes","type":"tuple[]","components":[{"name":"token","type":"address"},{"name":"amount","type":"uint256"}]},{"name":"fees","type":"tuple[]","components":[{"name":"token","type":"address"},{"name":"amount","type":"uint256"}]}]}]},{"stateMutability":"view","type":"function","name":"epochsByAddress","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"},{"name":"_address","type":"address"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"ts","type":"uint256"},{"name":"lp","type":"address"},{"name":"votes","type":"uint256"},{"name":"emissions","type":"uint256"},{"name":"bribes","type":"tuple[]","components":[{"name":"token","type":"address"},{"name":"amount","type":"uint256"}]},{"name":"fees","type":"tuple[]","components":[{"name":"token","type":"address"},{"name":"amount","type":"uint256"}]}]}]},{"stateMutability":"view","type":"function","name":"rewards","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"},{"name":"_venft_id","type":"uint256"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"venft_id","type":"uint256"},{"name":"lp","type":"address"},{"name":"amount","type":"uint256"},{"name":"token","type":"address"},{"name":"fee","type":"address"},{"name":"bribe","type":"address"}]}]},{"stateMutability":"view","type":"function","name":"rewardsByAddress","inputs":[{"name":"_venft_id","type":"uint256"},{"name":"_pool","type":"address"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"venft_id","type":"uint256"},{"name":"lp","type":"address"},{"name":"amount","type":"uint256"},{"name":"token","type":"address"},{"name":"fee","type":"address"},{"name":"bribe","type":"address"}]}]},{"stateMutability":"view","type":"function","name":"registry","inputs":[],"outputs":[{"name":"","type":"address"}]},{"stateMutability":"view","type":"function","name":"voter","inputs":[],"outputs":[{"name":"","type":"address"}]},{"stateMutability":"view","type":"function","name":"convertor","inputs":[],"outputs":[{"name":"","type":"address"}]},{"stateMutability":"view","type":"function","name":"cl_helper","inputs":[],"outputs":[{"name":"","type":"address"}]},{"stateMutability":"view","type":"function","name":"alm_factory","inputs":[],"outputs":[{"name":"","type":"address"}]}]'
 
