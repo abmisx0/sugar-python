@@ -1,6 +1,7 @@
 import os
 import dotenv
 from web3 import Web3
+from decimal import Decimal
 import pandas as pd
 import config
 from functools import lru_cache, wraps
@@ -279,6 +280,90 @@ class Sugar:
         return data
 
     @documented_cache(maxsize=32)
+    def lp_epochsByAddress(
+        self,
+        address: str,
+        limit: int = 50,
+        columns_export: Optional[Tuple[str]] = None,
+        columns_rename: Optional[frozenset] = None,
+        override: bool = True,
+    ):
+        """
+        Fetch and process LpSugar.epochsByAddress() data.
+
+        Args:
+            address (str): The address to fetch data for.
+            limit (int, default=50): The number of records to fetch per call.
+            columns_export (Optional[Tuple[str]], default=None): Columns to export in the resulting DataFrame.
+            columns_rename (Optional[frozenset], default=None): Columns to rename in the resulting DataFrame.
+            override (bool, default=True): Whether to override existing data.
+
+        Returns:
+
+        """
+        directory = "data-lp"
+        path_data_raw = f"{directory}/raw_lp_epochsByAddress_{self.chain}.txt"
+
+        if override:
+            call = self._fetch_lp_epochsByAddress(address, limit)
+            os.makedirs(directory, exist_ok=True)
+            with open(path_data_raw, "w") as f:
+                f.write(call)
+        else:
+            with open(path_data_raw, "r") as f:
+                call = f.read()
+
+        data = self._process_lp_epochsByAddress(call, columns_export, columns_rename)
+
+        if override:
+            path_csv = f"{directory}/lp_epochsByAddress_{self.chain}_{address}.csv"
+            self._export_csv(data, path_csv, directory)
+
+        return data
+
+    def _fetch_lp_epochsByAddress(self, address: str, limit: int) -> str:
+        """Fetch data from LpSugar.epochsByAddress() calls."""
+        print("\nStarting LpSugar.epochsByAddress() call\n")
+        call = self.lp.functions.epochsByAddress(limit, 0, address).call()
+        return str(call)
+
+    def _process_lp_epochsByAddress(
+        self,
+        call: str,
+        columns_export: Optional[Tuple[str]] = None,
+        columns_rename: Optional[frozenset] = None,
+    ) -> pd.DataFrame:
+        """Process data from LpSugar.epochsByAddress() calls."""
+        data_tokens = self.lp_tokens(listed=False, override=False)
+        data = pd.DataFrame(eval(call), columns=config.COLUMNS_LP_EPOCH)
+
+        for col in config.COLUMNS_LP_EPOCH_CONVERT:
+            if col in ("emissions", "votes"):
+                data[col] = data[col].apply(lambda x: self.from_wei(x, 18))
+            else:
+                data[col] = data.apply(lambda row: self._process_rewards(row[col], data_tokens), axis=1)
+
+        if columns_export:
+            data = data[list(columns_export)]
+        if columns_rename:
+            data.rename(columns=dict(columns_rename), inplace=True)
+        return data
+
+    def _process_rewards(self, rewards: str, data_tokens: pd.DataFrame) -> str:
+        """Process rewards from LpSugar.epochsByAddress() call."""
+        if not rewards:
+            return str([])
+        return str(
+            [
+                (
+                    tup[0],
+                    self.from_wei(tup[1], data_tokens.loc[tup[0], "decimals"]).__float__(),
+                )
+                for tup in rewards
+            ]
+        )
+
+    @documented_cache(maxsize=32)
     def ve_all(
         self,
         limit: int = 800,
@@ -533,6 +618,16 @@ class Sugar:
         path_csv = f"{directory}/relay_depositors_{self.chain}_{block_num}_{relay_name}.csv"
         self._export_csv(data, path_csv, directory)
 
+    def from_wei(self, number: int, decimals: int) -> Decimal:
+        """Convert wei to a decimal."""
+        number = int(number)
+        decimals = int(decimals)
+        return Decimal(number) / Decimal(10**decimals)
+
+    def to_wei(self, number: Union[Decimal, int, float], decimals: int) -> int:
+        """Convert a decimal to wei."""
+        return int(number * (10**decimals))
+
     def _export_csv(self, df: pd.DataFrame, path: str, directory: Optional[str] = None) -> None:
         """Export dataframe to csv."""
         if directory:
@@ -544,23 +639,23 @@ if __name__ == "__main__":
     ##################### BASE #####################
     sugar = Sugar("base")
     sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
-    sugar.lp_tokens(listed=False)
-    sugar.lp_all()
+    # sugar.lp_tokens(listed=False)
+    # sugar.lp_all()
 
-    data, block_num = sugar.ve_all(
-        columns_export=config.COLUMNS_VENFT_EXPORT,
-        columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
-    )
-    # block_num = 20657276
+    # data, block_num = sugar.ve_all(
+    #     columns_export=config.COLUMNS_VENFT_EXPORT,
+    #     columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
+    # )
+    # # block_num = 20657276
 
-    pools = (
-        "0x70aCDF2Ad0bf2402C957154f944c19Ef4e1cbAE1",
-        "0x4e962BB3889Bf030368F56810A9c96B83CB3E778",
-    )
-    sugar.voters(pools, block_num, master_export=False)
-    sugar.voters(pools, block_num, master_export=True)
+    # pools = (
+    #     "0x70aCDF2Ad0bf2402C957154f944c19Ef4e1cbAE1",
+    #     "0x4e962BB3889Bf030368F56810A9c96B83CB3E778",
+    # )
+    # sugar.voters(pools, block_num, master_export=False)
+    # sugar.voters(pools, block_num, master_export=True)
 
-    sugar.relay_depositors(12435, block_num)
+    # sugar.relay_depositors(12435, block_num)
 
     ###################### OP ######################
     # sugar = Sugar("op")
