@@ -11,8 +11,7 @@ def process_ve_data(chain: Literal["base", "op"]):
     sugar = Sugar(chain)
     sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
     data, block_num = sugar.ve_all(
-        columns_export=("id", "account", "governance_amount"),
-        index_id=False,
+        columns_export=("id", "account", "governance_amount"), index_id=False, override=False
     )
 
     grouped = (

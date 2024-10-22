@@ -192,7 +192,8 @@ class Sugar:
                 all_calls.extend(str(call))
                 offset += limit
                 print(f"{offset = }")
-            except Exception:
+            except Exception as e:
+                print(f"Error in _fetch_lp_tokens: {e}")
                 break
         return str("".join(all_calls)).replace("][", ", ")
 
@@ -638,15 +639,15 @@ class Sugar:
 if __name__ == "__main__":
     ##################### BASE #####################
     sugar = Sugar("base")
-    sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
-    # sugar.lp_tokens(listed=False)
-    # sugar.lp_all()
+    # sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
+    sugar.lp_tokens(listed=False)
+    sugar.lp_all()
 
     # data, block_num = sugar.ve_all(
     #     columns_export=config.COLUMNS_VENFT_EXPORT,
     #     columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
     # )
-    # # block_num = 20657276
+    # block_num = 20849619
 
     # pools = (
     #     "0x70aCDF2Ad0bf2402C957154f944c19Ef4e1cbAE1",

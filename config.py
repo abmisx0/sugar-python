@@ -25,6 +25,11 @@ CONNECTORS_BASE = (
     "0xB79DD08EA68A908A97220C76d19A6aA9cBDE4376",  # USD+
     "0xf7A0dd3317535eC4f4d29ADF9d620B3d8D5D5069",  # stERN
     "0xCfA3Ef56d303AE4fAabA0592388F19d7C3399FB4",  # eUSD
+    "0xCb327b99fF831bF8223cCEd12B1338FF3aA322Ff",  # bsdETH
+    "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",  # cbETH
+    "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",  # wstETH
+    "0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42",  # EURC
+    "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA",  # USDbC
 )
 CONNECTORS_OP = (
     "0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db",  # VELO
@@ -49,14 +54,16 @@ CONNECTORS_OP = (
 )
 CONNECTORS_MODE = (
     "0x4200000000000000000000000000000000000006",  # WETH
-    "0xd988097fb8612cc24eeC14542bC03424c656005f",  # USDC
     "0xDfc7C877a950e49D2610114102175A06C2e3167a",  # MODE
+    "0xf0F161fDA2712DB8b566946122a5af183995e2eD",  # USDT
+    "0xE7798f023fC62146e8Aa1b36Da45fb70855a77Ea",  # DAI
 )
 CONNECTORS_BOB = (
     "0x4200000000000000000000000000000000000006",  # WETH
-    "0xe75D0fB2C24A55cA1e3F96781a2bCC7bdba058F0",  # USDC.e
     "0x03C7054BCB39f7b2e5B2c7AcB37583e32D70Cfa3",  # WBTC
-    "0xBBa2eF945D523C4e2608C9E1214C2Cc64D4fc2e2",  # tBTC
+    "0x05d032ac25d322df992303dca074ee7392c117b9",  # USDT
+    "0x6c851f501a3f24e29a8e39a29591cddf09369080",  # DAI
+    "0xc4a20a608616f18aa631316eeda9fb62d089361e",  # FRAX
 )
 
 COLUMNS_LP = (
@@ -169,8 +176,8 @@ COLUMNS_RELAY = (
     "compounded",
     "withdrawable",
     "run_at",
-    "manager",
-    "relay",
+    "manager",  # manager address
+    "relay",  # relay address
     "inactive",
     "name",
     "account_venfts",
@@ -182,13 +189,7 @@ COLUMNS_RELAY_ETH = (
     "votes",
     "compounded",
 )
-COLUMNS_RELAY_EXPORT = (
-    "name",
-    "manager",
-    "voting_amount",
-    "used_voting_amount",
-    "votes",
-)
+COLUMNS_RELAY_EXPORT = ("name", "manager", "relay", "voting_amount", "used_voting_amount", "votes")
 COLUMNS_RELAY_EXPORT_RENAME = frozenset({"votes": "votes (lp, weight)"}.items())
 
 ABI_LP_SUGAR_OP = '[{"stateMutability":"nonpayable","type":"constructor","inputs":[{"name":"_voter","type":"address"},{"name":"_registry","type":"address"},{"name":"_convertor","type":"address"},{"name":"_slipstream_helper","type":"address"},{"name":"_alm_factory","type":"address"}],"outputs":[]},{"stateMutability":"view","type":"function","name":"forSwaps","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"lp","type":"address"},{"name":"type","type":"int24"},{"name":"token0","type":"address"},{"name":"token1","type":"address"},{"name":"factory","type":"address"},{"name":"pool_fee","type":"uint256"}]}]},{"stateMutability":"view","type":"function","name":"tokens","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"},{"name":"_account","type":"address"},{"name":"_addresses","type":"address[]"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"token_address","type":"address"},{"name":"symbol","type":"string"},{"name":"decimals","type":"uint8"},{"name":"account_balance","type":"uint256"},{"name":"listed","type":"bool"}]}]},{"stateMutability":"view","type":"function","name":"all","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"lp","type":"address"},{"name":"symbol","type":"string"},{"name":"decimals","type":"uint8"},{"name":"liquidity","type":"uint256"},{"name":"type","type":"int24"},{"name":"tick","type":"int24"},{"name":"sqrt_ratio","type":"uint160"},{"name":"token0","type":"address"},{"name":"reserve0","type":"uint256"},{"name":"staked0","type":"uint256"},{"name":"token1","type":"address"},{"name":"reserve1","type":"uint256"},{"name":"staked1","type":"uint256"},{"name":"gauge","type":"address"},{"name":"gauge_liquidity","type":"uint256"},{"name":"gauge_alive","type":"bool"},{"name":"fee","type":"address"},{"name":"bribe","type":"address"},{"name":"factory","type":"address"},{"name":"emissions","type":"uint256"},{"name":"emissions_token","type":"address"},{"name":"pool_fee","type":"uint256"},{"name":"unstaked_fee","type":"uint256"},{"name":"token0_fees","type":"uint256"},{"name":"token1_fees","type":"uint256"},{"name":"nfpm","type":"address"},{"name":"alm","type":"address"}]}]},{"stateMutability":"view","type":"function","name":"byIndex","inputs":[{"name":"_index","type":"uint256"}],"outputs":[{"name":"","type":"tuple","components":[{"name":"lp","type":"address"},{"name":"symbol","type":"string"},{"name":"decimals","type":"uint8"},{"name":"liquidity","type":"uint256"},{"name":"type","type":"int24"},{"name":"tick","type":"int24"},{"name":"sqrt_ratio","type":"uint160"},{"name":"token0","type":"address"},{"name":"reserve0","type":"uint256"},{"name":"staked0","type":"uint256"},{"name":"token1","type":"address"},{"name":"reserve1","type":"uint256"},{"name":"staked1","type":"uint256"},{"name":"gauge","type":"address"},{"name":"gauge_liquidity","type":"uint256"},{"name":"gauge_alive","type":"bool"},{"name":"fee","type":"address"},{"name":"bribe","type":"address"},{"name":"factory","type":"address"},{"name":"emissions","type":"uint256"},{"name":"emissions_token","type":"address"},{"name":"pool_fee","type":"uint256"},{"name":"unstaked_fee","type":"uint256"},{"name":"token0_fees","type":"uint256"},{"name":"token1_fees","type":"uint256"},{"name":"nfpm","type":"address"},{"name":"alm","type":"address"}]}]},{"stateMutability":"view","type":"function","name":"positions","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"},{"name":"_account","type":"address"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"id","type":"uint256"},{"name":"lp","type":"address"},{"name":"liquidity","type":"uint256"},{"name":"staked","type":"uint256"},{"name":"amount0","type":"uint256"},{"name":"amount1","type":"uint256"},{"name":"staked0","type":"uint256"},{"name":"staked1","type":"uint256"},{"name":"unstaked_earned0","type":"uint256"},{"name":"unstaked_earned1","type":"uint256"},{"name":"emissions_earned","type":"uint256"},{"name":"tick_lower","type":"int24"},{"name":"tick_upper","type":"int24"},{"name":"sqrt_ratio_lower","type":"uint160"},{"name":"sqrt_ratio_upper","type":"uint160"},{"name":"alm","type":"address"}]}]},{"stateMutability":"view","type":"function","name":"positionsByFactory","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"},{"name":"_account","type":"address"},{"name":"_factory","type":"address"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"id","type":"uint256"},{"name":"lp","type":"address"},{"name":"liquidity","type":"uint256"},{"name":"staked","type":"uint256"},{"name":"amount0","type":"uint256"},{"name":"amount1","type":"uint256"},{"name":"staked0","type":"uint256"},{"name":"staked1","type":"uint256"},{"name":"unstaked_earned0","type":"uint256"},{"name":"unstaked_earned1","type":"uint256"},{"name":"emissions_earned","type":"uint256"},{"name":"tick_lower","type":"int24"},{"name":"tick_upper","type":"int24"},{"name":"sqrt_ratio_lower","type":"uint160"},{"name":"sqrt_ratio_upper","type":"uint160"},{"name":"alm","type":"address"}]}]},{"stateMutability":"view","type":"function","name":"epochsLatest","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"ts","type":"uint256"},{"name":"lp","type":"address"},{"name":"votes","type":"uint256"},{"name":"emissions","type":"uint256"},{"name":"bribes","type":"tuple[]","components":[{"name":"token","type":"address"},{"name":"amount","type":"uint256"}]},{"name":"fees","type":"tuple[]","components":[{"name":"token","type":"address"},{"name":"amount","type":"uint256"}]}]}]},{"stateMutability":"view","type":"function","name":"epochsByAddress","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"},{"name":"_address","type":"address"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"ts","type":"uint256"},{"name":"lp","type":"address"},{"name":"votes","type":"uint256"},{"name":"emissions","type":"uint256"},{"name":"bribes","type":"tuple[]","components":[{"name":"token","type":"address"},{"name":"amount","type":"uint256"}]},{"name":"fees","type":"tuple[]","components":[{"name":"token","type":"address"},{"name":"amount","type":"uint256"}]}]}]},{"stateMutability":"view","type":"function","name":"rewards","inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"},{"name":"_venft_id","type":"uint256"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"venft_id","type":"uint256"},{"name":"lp","type":"address"},{"name":"amount","type":"uint256"},{"name":"token","type":"address"},{"name":"fee","type":"address"},{"name":"bribe","type":"address"}]}]},{"stateMutability":"view","type":"function","name":"rewardsByAddress","inputs":[{"name":"_venft_id","type":"uint256"},{"name":"_pool","type":"address"}],"outputs":[{"name":"","type":"tuple[]","components":[{"name":"venft_id","type":"uint256"},{"name":"lp","type":"address"},{"name":"amount","type":"uint256"},{"name":"token","type":"address"},{"name":"fee","type":"address"},{"name":"bribe","type":"address"}]}]},{"stateMutability":"view","type":"function","name":"registry","inputs":[],"outputs":[{"name":"","type":"address"}]},{"stateMutability":"view","type":"function","name":"voter","inputs":[],"outputs":[{"name":"","type":"address"}]},{"stateMutability":"view","type":"function","name":"convertor","inputs":[],"outputs":[{"name":"","type":"address"}]},{"stateMutability":"view","type":"function","name":"cl_helper","inputs":[],"outputs":[{"name":"","type":"address"}]},{"stateMutability":"view","type":"function","name":"alm_factory","inputs":[],"outputs":[{"name":"","type":"address"}]}]'
