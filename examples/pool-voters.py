@@ -1,6 +1,6 @@
 import sys
 import os
-from typing import Union, Tuple
+from typing import Union, Tuple, Literal
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sugar import Sugar
@@ -8,7 +8,7 @@ import config
 
 
 def get_voters(
-    chain: str,
+    chain: Literal["base", "op"],
     pools: Union[str, Tuple[str]],
     master_export: bool = True,
     override: bool = True,
@@ -31,4 +31,4 @@ if __name__ == "__main__":
         "0x70aCDF2Ad0bf2402C957154f944c19Ef4e1cbAE1",
         "0x4e962BB3889Bf030368F56810A9c96B83CB3E778",
     )
-    get_voters("base", pools_base, override=False)
+    get_voters("base", pools_base)
