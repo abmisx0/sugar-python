@@ -519,6 +519,7 @@ class Sugar:
         """Filter and export voters for specified pools."""
         if isinstance(pool_address, str):
             pool_address = (pool_address,)
+        num_pools = len(pool_address)
         cols = ("account", "governance_amount", "votes")
         data_ve, _ = self.ve_all(columns_export=cols, weights=False, override=False)
         data_lp = self.lp_all(index_lp=True, override=False)
@@ -532,12 +533,17 @@ class Sugar:
                 data_mod = data.copy()
                 data_mod["name"] = symbol
                 data_master = pd.concat([data_master, data_mod])
+                if num_pools == 1:
+                    directory = "data-voters"
+                    path_csv = f"{directory}/voters_{self.chain}_{block_num}_{symbol_file or addy}.csv"
+                    self._export_csv(data, path_csv, directory)
+
             else:
                 directory = "data-voters"
                 path_csv = f"{directory}/voters_{self.chain}_{block_num}_{symbol_file or addy}.csv"
                 self._export_csv(data, path_csv, directory)
 
-        if master_export:
+        if master_export and num_pools > 1:
             self._export_master_voters(data_master, block_num)
 
     def _process_voters(self, data_ve: pd.DataFrame, addy: str) -> pd.DataFrame:
@@ -659,10 +665,10 @@ if __name__ == "__main__":
     # sugar.relay_depositors(12435, block_num)
 
     ###################### OP ######################
-    # sugar = Sugar("op")
+    sugar = Sugar("op")
     # sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
-    # sugar.lp_tokens()
-    # sugar.lp_all()
+    sugar.lp_tokens(listed=False)
+    sugar.lp_all()
 
     # data, block_num = sugar.ve_all(
     #     columns_export=config.COLUMNS_VENFT_EXPORT,

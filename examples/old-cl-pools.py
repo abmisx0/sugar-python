@@ -85,15 +85,18 @@ class OldClPool:
 
 
 if __name__ == "__main__":
-    old_cl_lp_sugar = "0x4C6c4F0d23723d3210cA655Ae156CfCDb7239E7c"  # for epoch calls
+    old_cl_lp_sugar_epochs = "0x4C6c4F0d23723d3210cA655Ae156CfCDb7239E7c"  # for epoch calls
+    old_cl_lp_sugar_all = "0xb1246E20E865263b0b53355f302e70424B532d2E"  # for all calls
     # old cl pools need their rewards distributed, you can access them by calling CLPool.gaugeFees() method
     old_cl_pool = "0x3241738149B24C9164dA14Fa2040159FFC6Dd237"  # CL100-weth/usdc
-    sugar = Sugar("op", lp_address=old_cl_lp_sugar)
-    data_epochs = sugar.lp_epochsByAddress(old_cl_pool)
+    sugar_epochs = Sugar("op", lp_address=old_cl_lp_sugar_epochs)
+    sugar_all = Sugar("op", lp_address=old_cl_lp_sugar_all)
+    data_epochs = sugar_epochs.lp_epochsByAddress(old_cl_pool)
+    data_all = sugar_all.lp_all()
     current_votes = float(data_epochs.loc[0, "votes"])
 
     usdc_weth_pool = OldClPool("op", old_cl_pool, config.ABI_OLD_CL_POOL_OP)
-    gauge_fees_list = usdc_weth_pool.gauge_fees(sugar)
+    gauge_fees_list = usdc_weth_pool.gauge_fees(sugar_epochs)
 
     gt = GeckoTerminalAPI()
     prices = gt.network_addresses_token_price("optimism", gauge_fees_list[0])

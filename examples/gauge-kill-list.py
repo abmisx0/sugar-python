@@ -10,6 +10,7 @@ COLUMNS_GAUGE_KILL_EXPORT = ["symbol", "gauge"]
 
 
 def process_chain(chain: str, to_unlist: List[str]):
+    """Process chain for gauge kill list."""
     sugar = Sugar(chain)
     tokens = sugar.lp_tokens(listed=False)
     lps = sugar.lp_all()

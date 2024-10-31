@@ -7,6 +7,7 @@ import config
 
 
 def calculate_max_locked_percentage(chain: str):
+    """Calculate max locked percentage for specified chain."""
     sugar = Sugar(chain)
     sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
 
