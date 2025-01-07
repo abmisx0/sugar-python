@@ -23,12 +23,12 @@ def get_voters(
         override=override,
     )
 
-    sugar.voters(pools, block_num, master_export)
+    sugar.voters(pools, block_num, master_export=master_export)
 
 
 if __name__ == "__main__":
     pools_base = (
-        "0x70aCDF2Ad0bf2402C957154f944c19Ef4e1cbAE1",
-        "0x4e962BB3889Bf030368F56810A9c96B83CB3E778",
+        "0xC75799e0646470128a42D07335aB3BFa9E8Ee7C2",
+        "0xe7e01f38470136dE763d22e534e53C8BCdbA3f39",
     )
-    get_voters("base", pools_base)
+    get_voters("base", pools_base, master_export=False, override=False)

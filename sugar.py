@@ -262,7 +262,7 @@ class Sugar:
 
     def _process_lp_all(self, all_calls: str, index_lp: bool) -> pd.DataFrame:
         """Process data from LpSugar.all() calls."""
-        if self.chain == "op":
+        if self.chain in ["op", "base"]:
             data = pd.DataFrame(eval(all_calls), columns=config.COLUMNS_LP)
         else:
             data = pd.DataFrame(eval(all_calls), columns=config.COLUMNS_LP[0:-1])
@@ -619,10 +619,11 @@ class Sugar:
         data = grouped.sort_values("governance_amount", ascending=False)
 
         relay, _ = self.relay_all(filter_inactive=False, override=False)
-        relay_name = relay.loc[mveNFT_ID, "name"].replace(" ", "_")
+        # relay_name = relay.loc[mveNFT_ID, "name"].replace(" ", "_")
 
         directory = "data-relay-depositors"
-        path_csv = f"{directory}/relay_depositors_{self.chain}_{block_num}_{relay_name}.csv"
+        # path_csv = f"{directory}/relay_depositors_{self.chain}_{block_num}_{relay_name}.csv"
+        path_csv = f"{directory}/relay_depositors_{self.chain}_{block_num}_{mveNFT_ID}.csv"
         self._export_csv(data, path_csv, directory)
 
     def from_wei(self, number: int, decimals: int) -> Decimal:
@@ -645,15 +646,14 @@ class Sugar:
 if __name__ == "__main__":
     ##################### BASE #####################
     sugar = Sugar("base")
-    # sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
-    sugar.lp_tokens(listed=False)
-    sugar.lp_all()
+    sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
+    # sugar.lp_tokens()
+    # sugar.lp_all()
 
-    # data, block_num = sugar.ve_all(
-    #     columns_export=config.COLUMNS_VENFT_EXPORT,
-    #     columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
-    # )
-    # block_num = 20849619
+    data, block_num = sugar.ve_all(
+        columns_export=config.COLUMNS_VENFT_EXPORT,
+        columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
+    )
 
     # pools = (
     #     "0x70aCDF2Ad0bf2402C957154f944c19Ef4e1cbAE1",
@@ -662,21 +662,31 @@ if __name__ == "__main__":
     # sugar.voters(pools, block_num, master_export=False)
     # sugar.voters(pools, block_num, master_export=True)
 
-    # sugar.relay_depositors(12435, block_num)
+    # block_num = 23226611
+    sugar.relay_depositors(12435, block_num)
 
     ###################### OP ######################
-    sugar = Sugar("op")
+    # sugar = Sugar("op")
     # sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
-    sugar.lp_tokens(listed=False)
-    sugar.lp_all()
+    # sugar.lp_tokens()
+    # sugar.lp_all()
 
     # data, block_num = sugar.ve_all(
     #     columns_export=config.COLUMNS_VENFT_EXPORT,
     #     columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
     # )
 
-    # sugar.relay_depositors(20697, block_num)
+    # block_num = 128821896
+    # relays = (18676, 18697, 19041, 19042, 19455, 19467, 19490, 19491, 19837, 19838, 19839)
+    # for relay in relays:
+    #     try:
+    #         sugar.relay_depositors(relay, block_num)
+    #     except Exception as e:
+    #         print(f"{relay = }")
+    #         print(e)
+    #         continue
 
     ##################### MODE #####################
     # sugar = Sugar("mode")
-    # sugar.lp_tokens()
+    # sugar.lp_tokens(listed=False)
+    # sugar.lp_all()

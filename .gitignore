@@ -8,6 +8,8 @@ __pycache__
 .github
 *.csv
 test.py
+*.ts
+*.json
 
 /data-voters
 /data-relay-depositors
@@ -15,3 +17,4 @@ test.py
 /data-relay
 /data-ve
 /test
+/node_modules

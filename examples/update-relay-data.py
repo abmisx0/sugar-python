@@ -14,5 +14,5 @@ def update_relay_data(chain: Literal["base", "op"]):
 
 
 if __name__ == "__main__":
-    for chain in ("base", "op"):
-        update_relay_data(chain)
+    update_relay_data("base")
+    update_relay_data("op")
