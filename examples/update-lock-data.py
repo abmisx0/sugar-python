@@ -17,4 +17,4 @@ def update_lock_data(chain: Literal["base", "op"]):
 
 if __name__ == "__main__":
     update_lock_data("base")
-    # update_lock_data("op")
+    update_lock_data("op")

@@ -12,15 +12,25 @@ AERO_LIST_TO_REMOVE = (
     "0x51E171d2FDe9b37BBBb624A53Ef54959422388E4",  # FS
     "0x5b1892b546002Ff3dd508500575bD6Bf7a101431",  # Echinacea
 )
+VELO_LIST_TO_REMOVE = (
+    "0x2A8951eFCD40529Dd6eDb3149CCbE4E3cE7d053d",  # Echinacea
+)
 
 
 def process_ve_data(chain: Literal["base", "op"]):
     """Process ve data for specified chain and export holders to CSV."""
     sugar = Sugar(chain)
     sugar.relay_all(config.COLUMNS_RELAY_EXPORT, config.COLUMNS_RELAY_EXPORT_RENAME)
-    data, block_num = sugar.ve_all(columns_export=("id", "account", "governance_amount"), index_id=False)
+    data, block_num = sugar.ve_all(
+        limit=150 if chain == "op" else 1000,
+        columns_export=("id", "account", "governance_amount"),
+        index_id=False,
+    )
 
-    data = data[~data["account"].isin(AERO_LIST_TO_REMOVE)] if chain == "base" else data
+    if chain == "op":
+        data = data[~data["account"].isin(VELO_LIST_TO_REMOVE)]
+    elif chain == "base":
+        data = data[~data["account"].isin(AERO_LIST_TO_REMOVE)]
     grouped = (
         data.groupby("account")
         .agg({"governance_amount": "sum", "id": lambda x: ",".join(map(str, x))})
@@ -33,5 +43,5 @@ def process_ve_data(chain: Literal["base", "op"]):
 
 
 if __name__ == "__main__":
-    process_ve_data("base")
-    # process_ve_data("op")
+    # process_ve_data("base")
+    process_ve_data("op")
