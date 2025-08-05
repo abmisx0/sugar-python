@@ -18,3 +18,14 @@ test.py
 /data-ve
 /test
 /node_modules
+/internal
+
+create-rootPool.py
+note.md
+positions.py
+spice-script.py
+sugar-sdk.py
+sqrtpriceX96.ipynb
+sqrtpriceX96.py
+universal-router-decoder.py
+universal-router-decoder.ipynb

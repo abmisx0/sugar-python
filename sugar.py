@@ -48,14 +48,18 @@ class Sugar:
         except Exception as e:
             raise ValueError(f"Error initializing Sugar: {str(e)}")
 
-    def _initialize_contract(self, contract_type: str, address: Optional[str], chain: str):
+    def _initialize_contract(
+        self, contract_type: str, address: Optional[str], chain: str
+    ):
         """Initialize a contract object."""
         if address:
-            return self.w3.eth.contract(address, abi=getattr(config, f"ABI_{contract_type}_SUGAR_{chain}"))
+            return self.w3.eth.contract(
+                address, abi=getattr(config, f"ABI_SUGAR_{contract_type}")
+            )
         else:
             return self.w3.eth.contract(
-                getattr(config, f"ADDRESS_{contract_type}_SUGAR_{chain}"),
-                abi=getattr(config, f"ABI_{contract_type}_SUGAR_{chain}"),
+                getattr(config, f"ADDRESS_SUGAR_{contract_type}_{chain}"),
+                abi=getattr(config, f"ABI_SUGAR_{contract_type}"),
             )
 
     @documented_cache(maxsize=32)
@@ -84,7 +88,9 @@ class Sugar:
         if override:
             block = self.w3.eth.block_number
             print("\nStating RelaySugar.all() call\n")
-            call = self.relay.functions.all("0x0000000000000000000000000000000000000000").call()
+            call = self.relay.functions.all(
+                "0x0000000000000000000000000000000000000000"
+            ).call()
             os.makedirs(directory, exist_ok=True)
             call = str(call)
             with open(path_data_raw, "w") as f:
@@ -102,11 +108,15 @@ class Sugar:
         for col in config.COLUMNS_RELAY_ETH:
             if col == "votes":
                 data[col] = data.apply(
-                    lambda row: self._process_votes(row[col], row["used_voting_amount"]),
+                    lambda row: self._process_votes(
+                        row[col], row["used_voting_amount"]
+                    ),
                     axis=1,
                 )
             else:
-                data[col] = data[col].apply(lambda x: self.w3.from_wei(x, "ether").__round__(3))
+                data[col] = data[col].apply(
+                    lambda x: self.w3.from_wei(x, "ether").__round__(3)
+                )
 
         if filter_inactive:
             data = data[~data["inactive"]]
@@ -130,7 +140,9 @@ class Sugar:
             [
                 (
                     tup[0],
-                    (self.w3.from_wei(tup[1], "ether") / used_voting_amount).__round__(3).__float__(),
+                    (self.w3.from_wei(tup[1], "ether") / used_voting_amount)
+                    .__round__(3)
+                    .__float__(),
                 )
                 for tup in votes
             ]
@@ -208,7 +220,9 @@ class Sugar:
         return data
 
     @documented_cache(maxsize=32)
-    def lp_all(self, limit: int = 500, index_lp: bool = False, override: bool = True) -> pd.DataFrame:
+    def lp_all(
+        self, limit: int = 500, index_lp: bool = False, override: bool = True
+    ) -> pd.DataFrame:
         """
         Fetch and process LpSugar.all() data.
 
@@ -269,12 +283,34 @@ class Sugar:
         data.drop_duplicates(inplace=True)
 
         tokens = self.lp_tokens(listed=False, override=False)
-        data_cl = data[data["symbol"] == ""]
-        data_cl["symbol"] = data_cl.apply(
-            lambda row: f"CL{row['type']}-{tokens.loc[row['token0'], 'symbol']}/{tokens.loc[row['token1'], 'symbol']}",
-            axis=1,
-        )
-        data.update(data_cl)
+        data_cl = data[data["symbol"] == ""].copy()
+
+        # Define a safer function to get token symbols with error handling
+        def get_cl_symbol(row):
+            try:
+                token0_symbol = (
+                    tokens.loc[row["token0"], "symbol"]
+                    if row["token0"] in tokens.index
+                    else "UNKNOWN"
+                )
+                token1_symbol = (
+                    tokens.loc[row["token1"], "symbol"]
+                    if row["token1"] in tokens.index
+                    else "UNKNOWN"
+                )
+                return f"CL{row['type']}-{token0_symbol}/{token1_symbol}"
+            except Exception as e:
+                print(
+                    f"Error creating symbol for tokens {row['token0']}/{row['token1']}: {e}"
+                )
+                return f"CL{row['type']}-Unknown"
+
+        # Apply the safer function
+        data_cl["symbol"] = data_cl.apply(get_cl_symbol, axis=1)
+
+        # Only update if we have rows to update
+        if not data_cl.empty:
+            data.update(data_cl)
 
         if index_lp:
             data.set_index("lp", inplace=True)
@@ -342,7 +378,9 @@ class Sugar:
             if col in ("emissions", "votes"):
                 data[col] = data[col].apply(lambda x: self.from_wei(x, 18))
             else:
-                data[col] = data.apply(lambda row: self._process_rewards(row[col], data_tokens), axis=1)
+                data[col] = data.apply(
+                    lambda row: self._process_rewards(row[col], data_tokens), axis=1
+                )
 
         if columns_export:
             data = data[list(columns_export)]
@@ -358,7 +396,9 @@ class Sugar:
             [
                 (
                     tup[0],
-                    self.from_wei(tup[1], data_tokens.loc[tup[0], "decimals"]).__float__(),
+                    self.from_wei(
+                        tup[1], data_tokens.loc[tup[0], "decimals"]
+                    ).__float__(),
                 )
                 for tup in rewards
             ]
@@ -367,7 +407,6 @@ class Sugar:
     @documented_cache(maxsize=32)
     def ve_all(
         self,
-        limit: int = 800,
         columns_export: Optional[Tuple[str]] = None,
         columns_rename: Optional[frozenset] = None,
         weights: bool = True,
@@ -378,7 +417,6 @@ class Sugar:
         Fetch and process VeSugar.all() data.
 
         Args:
-            limit (int, default=800): The limit for fetching data.
             columns_export (Optional[Tuple[str]], default=None): Columns to export in the resulting DataFrame.
             columns_rename (Optional[frozenset], default=None): Columns to rename in the resulting DataFrame.
             weights (bool, default=True): Whether to include weights in the processing.
@@ -388,15 +426,13 @@ class Sugar:
         Returns:
             Tuple[pd.DataFrame, Optional[int]]: A tuple containing the processed DataFrame and the block number (if available).
         """
-        relay, _ = self.relay_all(filter_inactive=False, override=False)
-        relay_idx = sorted(set(relay.index))
-        relay_len = len(relay_idx)
 
         directory = "data-ve"
         path_data_raw = f"{directory}/raw_ve_all_{self.chain}.txt"
+        limit = os.environ[f"VE_ALL_LIMIT_{self.chain.upper()}"]
 
         if override:
-            all_calls, block = self._fetch_ve_all(limit, relay_idx, relay_len)
+            all_calls, block = self._fetch_ve_all(limit)
             os.makedirs(directory, exist_ok=True)
             with open(path_data_raw, "w") as f:
                 f.write(all_calls)
@@ -408,7 +444,9 @@ class Sugar:
         if block:
             print(f"\n{block = }")
 
-        data = self._process_ve_all(all_calls, columns_export, columns_rename, weights, index_id)
+        data = self._process_ve_all(
+            all_calls, columns_export, columns_rename, weights, index_id
+        )
 
         if override:
             path_csv = f"{directory}/ve_all_{self.chain}.csv"
@@ -416,44 +454,29 @@ class Sugar:
 
         return data, block
 
-    def _fetch_ve_all(self, limit: int, relay_idx: List[int], relay_len: int) -> Tuple[str, int]:
+    def _fetch_ve_all(
+        self, limit: int
+    ) -> Tuple[str, int]:  # , relay_idx: List[int], relay_len: int) -> Tuple[str, int]:
         """Fetch data from VeSugar.all() calls."""
         all_calls = []
         _offset = 1
-        _limit = limit
+        _limit = int(limit)
         block = self.w3.eth.block_number
-        i = 0
-        count = 0
         print("\nStarting veSugar.all() calls\n")
         while True:
-            if i < relay_len:
-                relay_num = relay_idx[i]
-                if _offset <= relay_num < (_offset + _limit):
-                    if relay_num == _offset:
-                        _offset += 1
-                    elif relay_num > _offset:
-                        _limit = relay_num - _offset
-                    if relay_num < _offset:
-                        i += 1
-                        count = 0
-                elif relay_num < _offset:
-                    i += 1
-                    count = 0
             try:
                 call = self.ve.functions.all(_limit, _offset).call()
                 if not call:
                     break
-                if count == 0:
-                    _limit = limit
                 all_calls.extend(str(call))
                 _offset = call[-1][0] + 1
-                print(f"{_offset = }")
-            except Exception:
-                _limit = max(_limit // 2, 1)
-                if _limit == 1:
+                print(f"{_offset = }, {_limit = }")
+            except Exception as e:
+                _limit -= 1
+                if _limit <= 1:
                     _offset += 1
                     _limit = limit
-                count += 1
+                print(f"Error in _fetch_ve_all: {e}")
         return str("".join(all_calls)).replace("][", ", "), block
 
     def _process_ve_all(
@@ -475,11 +498,15 @@ class Sugar:
         for col in config.COLUMNS_VENFT_ETH:
             if col == "votes":
                 data[col] = data.apply(
-                    lambda row: self._process_ve_votes(row[col], row["governance_amount"], weights),
+                    lambda row: self._process_ve_votes(
+                        row[col], row["governance_amount"], weights
+                    ),
                     axis=1,
                 )
             else:
-                data[col] = data[col].apply(lambda x: self.w3.from_wei(x, "ether").__round__(3))
+                data[col] = data[col].apply(
+                    lambda x: self.w3.from_wei(x, "ether").__round__(3)
+                )
 
         if columns_export:
             data = data[list(columns_export)]
@@ -506,7 +533,10 @@ class Sugar:
             )
         else:
             return str(
-                [(tup[0], self.w3.from_wei(tup[1], "ether").__round__(3).__float__()) for tup in votes]
+                [
+                    (tup[0], self.w3.from_wei(tup[1], "ether").__round__(3).__float__())
+                    for tup in votes
+                ]
             )
 
     def voters(
@@ -527,7 +557,9 @@ class Sugar:
         data_master = pd.DataFrame()
         for addy in pool_address:
             data = self._process_voters(data_ve, addy)
-            symbol, symbol_file = self._get_symbol(data_lp, addy, pool_address, pool_names)
+            symbol, symbol_file = self._get_symbol(
+                data_lp, addy, pool_address, pool_names
+            )
 
             if master_export:
                 data_mod = data.copy()
@@ -564,9 +596,15 @@ class Sugar:
         data["locks"] = matches
 
         total_votes = data.groupby("account")["governance_amount"].sum()
-        venfts = data.groupby("account")["locks"].apply(list).apply(lambda x: str(x).strip("[]"))
+        venfts = (
+            data.groupby("account")["locks"]
+            .apply(list)
+            .apply(lambda x: str(x).strip("[]"))
+        )
 
-        return pd.concat([total_votes, venfts], axis=1).sort_values("governance_amount", ascending=False)
+        return pd.concat([total_votes, venfts], axis=1).sort_values(
+            "governance_amount", ascending=False
+        )
 
     def _get_symbol(
         self,
@@ -607,7 +645,9 @@ class Sugar:
     def relay_depositors(self, mveNFT_ID: int, block_num: int):
         """Filter and export depositors for a specific relay."""
         cols = ("id", "account", "governance_amount", "managed_id")
-        data, _ = self.ve_all(columns_export=cols, weights=False, index_id=False, override=False)
+        data, _ = self.ve_all(
+            columns_export=cols, weights=False, index_id=False, override=False
+        )
         data = data[data["managed_id"] == mveNFT_ID]
 
         grouped = (
@@ -623,7 +663,9 @@ class Sugar:
 
         directory = "data-relay-depositors"
         # path_csv = f"{directory}/relay_depositors_{self.chain}_{block_num}_{relay_name}.csv"
-        path_csv = f"{directory}/relay_depositors_{self.chain}_{block_num}_{mveNFT_ID}.csv"
+        path_csv = (
+            f"{directory}/relay_depositors_{self.chain}_{block_num}_{mveNFT_ID}.csv"
+        )
         self._export_csv(data, path_csv, directory)
 
     def from_wei(self, number: int, decimals: int) -> Decimal:
@@ -636,7 +678,9 @@ class Sugar:
         """Convert a decimal to wei."""
         return int(number * (10**decimals))
 
-    def _export_csv(self, df: pd.DataFrame, path: str, directory: Optional[str] = None) -> None:
+    def _export_csv(
+        self, df: pd.DataFrame, path: str, directory: Optional[str] = None
+    ) -> None:
         """Export dataframe to csv."""
         if directory:
             os.makedirs(directory, exist_ok=True)

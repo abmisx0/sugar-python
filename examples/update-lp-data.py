@@ -14,5 +14,6 @@ def update_lp_data(chain: Literal["base", "op"]):
 
 
 if __name__ == "__main__":
-    for chain in ("base", "op"):
-        update_lp_data(chain)
+    # for chain in ("base", "op"):
+    #     update_lp_data(chain)
+    update_lp_data("base")
