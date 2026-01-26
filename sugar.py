@@ -539,6 +539,7 @@ class Sugar:
                 ]
             )
 
+    # todo: add relay voters
     def voters(
         self,
         pool_address: Union[str, Tuple[str]],
@@ -553,9 +554,11 @@ class Sugar:
         cols = ("account", "governance_amount", "votes")
         data_ve, _ = self.ve_all(columns_export=cols, weights=False, override=False)
         data_lp = self.lp_all(index_lp=True, override=False)
+        # data_relay, _ = self.relay_all(filter_inactive=False, override=False)
 
         data_master = pd.DataFrame()
         for addy in pool_address:
+            # relay_voters = self._process_relay_voters(data_relay, addy)
             data = self._process_voters(data_ve, addy)
             symbol, symbol_file = self._get_symbol(
                 data_lp, addy, pool_address, pool_names
@@ -577,6 +580,36 @@ class Sugar:
 
         if master_export and num_pools > 1:
             self._export_master_voters(data_master, block_num)
+
+    def _process_relay_voters(
+        self, data_relay: pd.DataFrame, addy: str
+    ) -> pd.DataFrame:
+        """Process relay voters for a specific pool."""
+        matches = []
+        votes = []
+        for venft, row in data_relay.iterrows():
+            if row["governance_amount"] == 0:
+                continue
+            ray = eval(row["votes"])
+            for tup in ray:
+                if tup[0].lower() == addy.lower():
+                    matches.append(venft)
+                    votes.append(tup[1])
+
+        data = data_relay.loc[matches, :].copy()
+        data["governance_amount"] = votes
+        data["locks"] = matches
+
+        total_votes = data.groupby("account")["governance_amount"].sum()
+        venfts = (
+            data.groupby("account")["locks"]
+            .apply(list)
+            .apply(lambda x: str(x).strip("[]"))
+        )
+
+        return pd.concat([total_votes, venfts], axis=1).sort_values(
+            "governance_amount", ascending=False
+        )
 
     def _process_voters(self, data_ve: pd.DataFrame, addy: str) -> pd.DataFrame:
         """Process voters for a specific pool."""
