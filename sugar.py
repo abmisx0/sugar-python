@@ -711,6 +711,170 @@ class Sugar:
         )
         self._export_csv(data, path_csv, directory)
 
+    # ==================== RewardsSugar Methods ====================
+
+    def _require_rewards(self):
+        """Raise error if RewardsSugar is not available on this chain."""
+        if self.rewards is None:
+            raise ValueError(f"RewardsSugar is not available on {self.chain_config['name']}")
+
+    @documented_cache(maxsize=32)
+    def rewards_epochs_latest(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        override: bool = True,
+    ) -> pd.DataFrame:
+        """
+        Fetch and process RewardsSugar.epochsLatest() data.
+        
+        Returns the latest epoch data for all pools.
+
+        Args:
+            limit (int, default=100): Maximum number of records to fetch.
+            offset (int, default=0): Offset for pagination.
+            override (bool, default=True): Whether to fetch new data or use cached data.
+
+        Returns:
+            pd.DataFrame: DataFrame with epoch data (ts, lp, votes, emissions, bribes, fees).
+        """
+        self._require_rewards()
+        directory = "data-rewards"
+        path_data_raw = f"{directory}/raw_rewards_epochs_latest_{self.chain}.txt"
+
+        if override:
+            print("\nStarting RewardsSugar.epochsLatest() call\n")
+            call = self.rewards.functions.epochsLatest(limit, offset).call()
+            os.makedirs(directory, exist_ok=True)
+            with open(path_data_raw, "w") as f:
+                f.write(str(call))
+        else:
+            with open(path_data_raw, "r") as f:
+                call = eval(f.read())
+
+        data = pd.DataFrame(call, columns=config.COLUMNS_REWARDS_EPOCH)
+        
+        # Convert wei values
+        for col in config.COLUMNS_REWARDS_EPOCH_CONVERT:
+            data[col] = data[col].apply(lambda x: self.w3.from_wei(x, "ether").__round__(6))
+
+        if override:
+            path_csv = f"{directory}/rewards_epochs_latest_{self.chain}.csv"
+            self._export_csv(data, path_csv, directory)
+
+        return data
+
+    @documented_cache(maxsize=32)
+    def rewards_epochs_by_address(
+        self,
+        address: str,
+        limit: int = 50,
+        offset: int = 0,
+        override: bool = True,
+    ) -> pd.DataFrame:
+        """
+        Fetch and process RewardsSugar.epochsByAddress() data for a specific pool.
+
+        Args:
+            address (str): Pool address to fetch epoch data for.
+            limit (int, default=50): Maximum number of epochs to fetch.
+            offset (int, default=0): Offset for pagination.
+            override (bool, default=True): Whether to fetch new data or use cached data.
+
+        Returns:
+            pd.DataFrame: DataFrame with epoch history for the pool.
+        """
+        self._require_rewards()
+        directory = "data-rewards"
+        path_data_raw = f"{directory}/raw_rewards_epochs_by_address_{self.chain}_{address[:10]}.txt"
+
+        if override:
+            print(f"\nStarting RewardsSugar.epochsByAddress() call for {address}\n")
+            call = self.rewards.functions.epochsByAddress(limit, offset, address).call()
+            os.makedirs(directory, exist_ok=True)
+            with open(path_data_raw, "w") as f:
+                f.write(str(call))
+        else:
+            with open(path_data_raw, "r") as f:
+                call = eval(f.read())
+
+        data = pd.DataFrame(call, columns=config.COLUMNS_REWARDS_EPOCH)
+        
+        # Convert wei values
+        for col in config.COLUMNS_REWARDS_EPOCH_CONVERT:
+            data[col] = data[col].apply(lambda x: self.w3.from_wei(x, "ether").__round__(6))
+
+        if override:
+            path_csv = f"{directory}/rewards_epochs_by_address_{self.chain}_{address[:10]}.csv"
+            self._export_csv(data, path_csv, directory)
+
+        return data
+
+    @documented_cache(maxsize=32)
+    def rewards_claimable(
+        self,
+        venft_id: int,
+        limit: int = 100,
+        offset: int = 0,
+        override: bool = True,
+    ) -> pd.DataFrame:
+        """
+        Fetch claimable rewards for a veNFT via RewardsSugar.rewards().
+
+        Args:
+            venft_id (int): The veNFT token ID to check rewards for.
+            limit (int, default=100): Maximum number of reward entries.
+            offset (int, default=0): Offset for pagination.
+            override (bool, default=True): Whether to fetch new data or use cached data.
+
+        Returns:
+            pd.DataFrame: DataFrame with claimable rewards (venft_id, lp, amount, token, fee, bribe).
+        """
+        self._require_rewards()
+        directory = "data-rewards"
+        path_data_raw = f"{directory}/raw_rewards_claimable_{self.chain}_{venft_id}.txt"
+
+        if override:
+            print(f"\nStarting RewardsSugar.rewards() call for veNFT {venft_id}\n")
+            call = self.rewards.functions.rewards(limit, offset, venft_id).call()
+            os.makedirs(directory, exist_ok=True)
+            with open(path_data_raw, "w") as f:
+                f.write(str(call))
+        else:
+            with open(path_data_raw, "r") as f:
+                call = eval(f.read())
+
+        data = pd.DataFrame(call, columns=config.COLUMNS_REWARDS)
+
+        if override:
+            path_csv = f"{directory}/rewards_claimable_{self.chain}_{venft_id}.csv"
+            self._export_csv(data, path_csv, directory)
+
+        return data
+
+    def rewards_by_pool(
+        self,
+        venft_id: int,
+        pool_address: str,
+    ) -> pd.DataFrame:
+        """
+        Fetch rewards for a specific veNFT and pool via RewardsSugar.rewardsByAddress().
+
+        Args:
+            venft_id (int): The veNFT token ID.
+            pool_address (str): The pool address to check rewards for.
+
+        Returns:
+            pd.DataFrame: DataFrame with rewards for the specific pool.
+        """
+        self._require_rewards()
+        print(f"\nStarting RewardsSugar.rewardsByAddress() call for veNFT {venft_id} on pool {pool_address}\n")
+        call = self.rewards.functions.rewardsByAddress(venft_id, pool_address).call()
+        
+        return pd.DataFrame(call, columns=config.COLUMNS_REWARDS)
+
+    # ==================== Utility Methods ====================
+
     def from_wei(self, number: int, decimals: int) -> Decimal:
         """Convert wei to a decimal."""
         number = int(number)
