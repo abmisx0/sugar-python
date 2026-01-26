@@ -4,6 +4,7 @@ from web3 import Web3
 from decimal import Decimal
 import pandas as pd
 import config
+from chains import get_chain, get_contract_address
 from functools import lru_cache, wraps
 from typing import Optional, List, Tuple, Union, Callable, TypeVar, ParamSpec
 
@@ -30,37 +31,74 @@ class Sugar:
         self,
         chain: str,
         lp_address: Optional[str] = None,
+        rewards_address: Optional[str] = None,
         relay_address: Optional[str] = None,
         ve_address: Optional[str] = None,
     ):
-        """Initialize Sugar for making Sugar calls on specified chain."""
+        """
+        Initialize Sugar for making Sugar calls on specified chain.
+        
+        Args:
+            chain: Chain key (op, base, mode, lisk, fraxtal, metal, ink, soneium, superseed, swell, unichain, celo)
+            lp_address: Override LpSugar contract address
+            rewards_address: Override RewardsSugar contract address
+            relay_address: Override RelaySugar contract address (OP/Base only)
+            ve_address: Override VeSugar contract address (OP/Base only)
+        """
         dotenv.load_dotenv()
         try:
             self.chain = chain.lower()
-            chain = chain.upper()
-            alchemy_key = os.environ[f"RPC_LINK_{chain}"]
-            self.w3 = Web3(Web3.HTTPProvider(alchemy_key))
-            self.lp = self._initialize_contract("LP", lp_address, chain)
-            if chain in ["OP", "BASE"]:
-                self.relay = self._initialize_contract("RELAY", relay_address, chain)
-                self.ve = self._initialize_contract("VE", ve_address, chain)
-            self.connectors = getattr(config, f"CONNECTORS_{chain}")
+            self.chain_config = get_chain(self.chain)
+            
+            # Get RPC from environment
+            rpc_env_key = self.chain_config["rpc_env"]
+            rpc_url = os.environ.get(rpc_env_key)
+            if not rpc_url:
+                raise ValueError(f"Missing RPC URL. Set {rpc_env_key} in .env")
+            
+            self.w3 = Web3(Web3.HTTPProvider(rpc_url))
+            
+            # Initialize LpSugar (available on all chains)
+            lp_addr = lp_address or get_contract_address(self.chain, "lp_sugar")
+            self.lp = self.w3.eth.contract(address=lp_addr, abi=config.ABI_SUGAR_LP)
+            
+            # Initialize RewardsSugar (available on all chains)
+            rewards_addr = rewards_address or get_contract_address(self.chain, "rewards_sugar")
+            if rewards_addr:
+                self.rewards = self.w3.eth.contract(address=rewards_addr, abi=config.ABI_SUGAR_REWARDS)
+            else:
+                self.rewards = None
+            
+            # Initialize VeSugar (OP/Base only)
+            if self.chain_config.get("has_ve"):
+                ve_addr = ve_address or get_contract_address(self.chain, "ve_sugar")
+                self.ve = self.w3.eth.contract(address=ve_addr, abi=config.ABI_SUGAR_VE)
+            else:
+                self.ve = None
+            
+            # Initialize RelaySugar (OP/Base only)
+            if self.chain_config.get("has_relay"):
+                relay_addr = relay_address or get_contract_address(self.chain, "relay_sugar")
+                self.relay = self.w3.eth.contract(address=relay_addr, abi=config.ABI_SUGAR_RELAY)
+            else:
+                self.relay = None
+            
+            # Get connectors for token lookups (backward compat)
+            chain_upper = self.chain.upper()
+            self.connectors = getattr(config, f"CONNECTORS_{chain_upper}", ())
+            
         except Exception as e:
             raise ValueError(f"Error initializing Sugar: {str(e)}")
 
-    def _initialize_contract(
-        self, contract_type: str, address: Optional[str], chain: str
-    ):
-        """Initialize a contract object."""
-        if address:
-            return self.w3.eth.contract(
-                address, abi=getattr(config, f"ABI_SUGAR_{contract_type}")
-            )
-        else:
-            return self.w3.eth.contract(
-                getattr(config, f"ADDRESS_SUGAR_{contract_type}_{chain}"),
-                abi=getattr(config, f"ABI_SUGAR_{contract_type}"),
-            )
+    def _require_relay(self):
+        """Raise error if RelaySugar is not available on this chain."""
+        if self.relay is None:
+            raise ValueError(f"RelaySugar is not available on {self.chain_config['name']}. Only available on: OP, Base")
+    
+    def _require_ve(self):
+        """Raise error if VeSugar is not available on this chain."""
+        if self.ve is None:
+            raise ValueError(f"VeSugar is not available on {self.chain_config['name']}. Only available on: OP, Base")
 
     @documented_cache(maxsize=32)
     def relay_all(
@@ -72,6 +110,8 @@ class Sugar:
     ) -> Tuple[pd.DataFrame, Optional[int]]:
         """
         Fetch and process RelaySugar.all() data.
+        
+        Note: Only available on Optimism and Base.
 
         Args:
             columns_export (Optional[Tuple[str]], default=None): Columns to export in the resulting DataFrame.
@@ -82,6 +122,7 @@ class Sugar:
         Returns:
             Tuple[pd.DataFrame, Optional[int]]: A tuple containing the processed DataFrame and the block number (if available).
         """
+        self._require_relay()
         directory = "data-relay"
         path_data_raw = f"{directory}/raw_relay_all_{self.chain}.txt"
 
@@ -415,6 +456,8 @@ class Sugar:
     ) -> Tuple[pd.DataFrame, Optional[int]]:
         """
         Fetch and process VeSugar.all() data.
+        
+        Note: Only available on Optimism and Base.
 
         Args:
             columns_export (Optional[Tuple[str]], default=None): Columns to export in the resulting DataFrame.
@@ -426,7 +469,7 @@ class Sugar:
         Returns:
             Tuple[pd.DataFrame, Optional[int]]: A tuple containing the processed DataFrame and the block number (if available).
         """
-
+        self._require_ve()
         directory = "data-ve"
         path_data_raw = f"{directory}/raw_ve_all_{self.chain}.txt"
         limit = os.environ[f"VE_ALL_LIMIT_{self.chain.upper()}"]
