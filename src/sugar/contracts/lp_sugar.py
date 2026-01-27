@@ -172,7 +172,7 @@ class LpSugar(BaseContract):
 
     def tokens_paginated(
         self,
-        limit: int = 500,
+        limit: int = 1000,
         account: str = ZERO_ADDRESS,
         connectors: tuple[str, ...] | None = None,
     ) -> list[tuple]:
@@ -180,7 +180,7 @@ class LpSugar(BaseContract):
         Fetch all token metadata with automatic pagination.
 
         Args:
-            limit: Items per page. Default 500 to avoid RPC errors with large batches.
+            limit: Items per page. Default 1000 to avoid RPC errors with large batches.
             account: Account address for balance queries.
             connectors: Connector tokens (uses instance connectors if None).
 
@@ -206,7 +206,9 @@ class LpSugar(BaseContract):
                 all_results.extend(result)
                 # Increment offset by limit (pagination is index-based)
                 offset += limit
-                logger.debug(f"tokens: fetched {len(result)} items, offset now {offset}")
+                logger.debug(
+                    f"tokens: fetched {len(result)} items, offset now {offset}"
+                )
 
             except Exception as e:
                 logger.warning(f"tokens pagination error at offset {offset}: {e}")
