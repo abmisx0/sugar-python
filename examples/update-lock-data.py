@@ -1,21 +1,32 @@
-import sys
-import os
-from typing import Literal
+"""Example: Update veNFT lock data for a chain.
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from sugar import Sugar
-import config
+This script demonstrates how to fetch and export veNFT (vote-escrow NFT)
+data using the new SugarClient API.
+"""
+
+from sugar import SugarClient, ChainId
 
 
-def update_lock_data(chain: Literal["base", "op"]):
+def update_lock_data(chain: ChainId | str) -> None:
     """Update lock data for specified chain."""
-    sugar = Sugar(chain)
-    sugar.ve_all(
-        columns_export=config.COLUMNS_VENFT_EXPORT,
-        columns_rename=config.COLUMNS_VENFT_EXPORT_RENAME,
-    )
+    client = SugarClient(chain)
+
+    if not client.has_ve():
+        print(f"VE Sugar not available on {client.chain_name}")
+        return
+
+    print(f"Fetching veNFT data for {client.chain_name}...")
+    print("Note: This may take a while for chains with many veNFTs")
+
+    # Get veNFT data as DataFrame
+    ve_df = client.get_ve_positions()
+    print(f"Found {len(ve_df)} veNFTs")
+
+    # Export to CSV
+    path = client.export_ve_positions()
+    print(f"veNFTs exported to: {path}")
 
 
 if __name__ == "__main__":
-    update_lock_data("base")
-    # update_lock_data("op")
+    update_lock_data(ChainId.BASE)
+    # update_lock_data(ChainId.OPTIMISM)

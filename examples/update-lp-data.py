@@ -1,19 +1,27 @@
-import sys
-import os
-from typing import Literal
+"""Example: Update LP pool data for a chain.
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from sugar import Sugar
+This script demonstrates how to fetch and export LP pool data
+using the new SugarClient API.
+"""
+
+from sugar import SugarClient, ChainId
 
 
-def update_lp_data(chain: Literal["base", "op"]):
-    """Update lp data for specified chain."""
-    sugar = Sugar(chain)
-    sugar.lp_tokens(listed=False)
-    sugar.lp_all()
+def update_lp_data(chain: ChainId | str) -> None:
+    """Update LP data for specified chain."""
+    client = SugarClient(chain)
+
+    print(f"Fetching LP data for {client.chain_name}...")
+
+    # Export tokens
+    token_path = client.export_tokens()
+    print(f"Tokens exported to: {token_path}")
+
+    # Export pools
+    pool_path = client.export_pools()
+    print(f"Pools exported to: {pool_path}")
 
 
 if __name__ == "__main__":
-    # for chain in ("base", "op"):
-    #     update_lp_data(chain)
-    update_lp_data("base")
+    update_lp_data(ChainId.BASE)
+    # update_lp_data(ChainId.OPTIMISM)
