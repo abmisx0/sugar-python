@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import pandas as pd
+from web3 import Web3
 
 from sugar.config.columns import (
     COLUMNS_LP,
@@ -18,9 +19,21 @@ from sugar.config.columns import (
 from sugar.utils.wei import from_wei
 
 if TYPE_CHECKING:
+    from sugar.core.web3_provider import Web3Provider
     from sugar.services.price_provider import PriceProvider
 
 logger = logging.getLogger(__name__)
+
+# Minimal ERC20 ABI for symbol lookup
+ERC20_SYMBOL_ABI = [
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "symbol",
+        "outputs": [{"name": "", "type": "string"}],
+        "type": "function",
+    }
+]
 
 
 class DataProcessor:
@@ -30,14 +43,21 @@ class DataProcessor:
     Handles column mapping, wei conversions, and data transformations.
     """
 
-    def __init__(self, price_provider: PriceProvider | None = None) -> None:
+    def __init__(
+        self,
+        price_provider: PriceProvider | None = None,
+        web3_provider: Web3Provider | None = None,
+    ) -> None:
         """
         Initialize data processor.
 
         Args:
             price_provider: Optional price provider for pricing data.
+            web3_provider: Optional web3 provider for on-chain lookups.
         """
         self._prices = price_provider
+        self._web3_provider = web3_provider
+        self._symbol_cache: dict[str, str] = {}
 
     def process_lp_all(
         self,
@@ -76,20 +96,61 @@ class DataProcessor:
     def _get_cl_symbol(self, row: pd.Series, tokens_df: pd.DataFrame) -> str:
         """Generate symbol for CL pools."""
         try:
-            token0_symbol = (
-                tokens_df.loc[row["token0"], "symbol"]
-                if row["token0"] in tokens_df.index
-                else "UNKNOWN"
-            )
-            token1_symbol = (
-                tokens_df.loc[row["token1"], "symbol"]
-                if row["token1"] in tokens_df.index
-                else "UNKNOWN"
-            )
+            token0_symbol = self._get_token_symbol(row["token0"], tokens_df)
+            token1_symbol = self._get_token_symbol(row["token1"], tokens_df)
             return f"CL{row['type']}-{token0_symbol}/{token1_symbol}"
         except Exception as e:
             logger.warning(f"Error creating CL symbol: {e}")
             return f"CL{row['type']}-Unknown"
+
+    def _get_token_symbol(self, token_address: str, tokens_df: pd.DataFrame) -> str:
+        """
+        Get token symbol from DataFrame or fetch from chain.
+
+        Args:
+            token_address: Token contract address.
+            tokens_df: Token metadata DataFrame.
+
+        Returns:
+            Token symbol or "UNKNOWN" if not found.
+        """
+        # Check DataFrame first
+        if token_address in tokens_df.index:
+            return tokens_df.loc[token_address, "symbol"]
+
+        # Check cache
+        if token_address in self._symbol_cache:
+            return self._symbol_cache[token_address]
+
+        # Try to fetch from chain
+        if self._web3_provider is not None:
+            symbol = self._fetch_symbol_from_chain(token_address)
+            if symbol:
+                self._symbol_cache[token_address] = symbol
+                return symbol
+
+        return "UNKNOWN"
+
+    def _fetch_symbol_from_chain(self, token_address: str) -> str | None:
+        """
+        Fetch token symbol directly from the ERC20 contract.
+
+        Args:
+            token_address: Token contract address.
+
+        Returns:
+            Token symbol or None if fetch fails.
+        """
+        try:
+            contract = self._web3_provider.web3.eth.contract(
+                address=Web3.to_checksum_address(token_address),
+                abi=ERC20_SYMBOL_ABI,
+            )
+            symbol = contract.functions.symbol().call()
+            return symbol
+        except Exception as e:
+            logger.debug(f"Failed to fetch symbol for {token_address}: {e}")
+            return None
 
     def process_tokens(
         self,

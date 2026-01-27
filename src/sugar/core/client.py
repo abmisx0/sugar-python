@@ -175,7 +175,7 @@ class SugarClient:
     def processor(self) -> DataProcessor:
         """Data processor service."""
         if self._data_processor is None:
-            self._data_processor = DataProcessor(self.prices)
+            self._data_processor = DataProcessor(self.prices, self._provider)
         return self._data_processor
 
     def has_ve(self) -> bool:

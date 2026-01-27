@@ -172,7 +172,7 @@ class LpSugar(BaseContract):
 
     def tokens_paginated(
         self,
-        limit: int | None = None,
+        limit: int = 500,
         account: str = ZERO_ADDRESS,
         connectors: tuple[str, ...] | None = None,
     ) -> list[tuple]:
@@ -180,7 +180,7 @@ class LpSugar(BaseContract):
         Fetch all token metadata with automatic pagination.
 
         Args:
-            limit: Items per page. If None, uses MAX_TOKENS from contract.
+            limit: Items per page. Default 500 to avoid RPC errors with large batches.
             account: Account address for balance queries.
             connectors: Connector tokens (uses instance connectors if None).
 
@@ -190,22 +190,17 @@ class LpSugar(BaseContract):
         if connectors is None:
             connectors = self._connectors
 
-        # Use contract's MAX_TOKENS if no limit specified
-        if limit is None:
-            try:
-                limit = self.max_tokens()
-            except Exception:
-                limit = 2000  # Fallback default
-
         all_results: list[tuple] = []
         offset = 0
+        num_connectors = len(connectors)
 
         while True:
             try:
                 result = self.tokens(limit, offset, account, connectors)
 
-                # Stop if only connectors returned (no new tokens) or empty
-                if not result or len(result) <= len(connectors):
+                # Stop only when result is exactly the connector list length
+                # (meaning no new tokens were found beyond connectors)
+                if len(result) == num_connectors:
                     break
 
                 all_results.extend(result)
