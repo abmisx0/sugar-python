@@ -15,6 +15,7 @@ test.py
 /data-relay-depositors
 /data-lp
 /data-relay
+/data-combined
 /data-ve
 /test
 /node_modules

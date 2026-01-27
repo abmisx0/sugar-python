@@ -276,6 +276,7 @@ class DataProcessor:
         lp_df: pd.DataFrame,
         epochs_df: pd.DataFrame,
         tokens_df: pd.DataFrame | None = None,
+        only_with_rewards: bool = True,
     ) -> pd.DataFrame:
         """
         Combine LP data with latest epoch rewards.
@@ -284,15 +285,18 @@ class DataProcessor:
             lp_df: LP data from process_lp_all().
             epochs_df: Epoch data from process_epochs_latest().
             tokens_df: Token metadata for pricing.
+            only_with_rewards: If True, only include pools that have epoch rewards
+                (inner join). If False, include all pools (left join).
 
         Returns:
             Combined DataFrame with LP info and rewards.
         """
-        # Merge on lp address
+        # Merge on lp address - use inner join to only get pools with rewards
+        join_type = "inner" if only_with_rewards else "left"
         combined = lp_df.merge(
             epochs_df[["lp", "votes", "emissions", "bribes", "fees"]],
             on="lp",
-            how="left",
+            how=join_type,
             suffixes=("", "_epoch"),
         )
 

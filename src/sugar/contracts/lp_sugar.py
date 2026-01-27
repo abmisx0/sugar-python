@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from web3 import Web3
+
 from sugar.contracts.base import BaseContract
 
 if TYPE_CHECKING:
@@ -41,7 +43,8 @@ class LpSugar(BaseContract):
             connectors: Connector token addresses for price queries.
         """
         super().__init__(provider, address)
-        self._connectors = connectors
+        # Ensure connectors are checksum addresses
+        self._connectors = tuple(Web3.to_checksum_address(c) for c in connectors)
 
     @property
     def connectors(self) -> tuple[str, ...]:
@@ -56,6 +59,33 @@ class LpSugar(BaseContract):
             Total pool count.
         """
         return self._call("count")
+
+    def max_tokens(self) -> int:
+        """
+        Get the maximum number of tokens that can be returned per call.
+
+        Returns:
+            Maximum tokens limit (typically 2000).
+        """
+        return self._call("MAX_TOKENS")
+
+    def max_lps(self) -> int:
+        """
+        Get the maximum number of LPs that can be returned per call.
+
+        Returns:
+            Maximum LPs limit (typically 500).
+        """
+        return self._call("MAX_LPS")
+
+    def max_positions(self) -> int:
+        """
+        Get the maximum number of positions that can be returned per call.
+
+        Returns:
+            Maximum positions limit (typically 200).
+        """
+        return self._call("MAX_POSITIONS")
 
     def all(
         self,
@@ -142,7 +172,7 @@ class LpSugar(BaseContract):
 
     def tokens_paginated(
         self,
-        limit: int = 1000,
+        limit: int | None = None,
         account: str = ZERO_ADDRESS,
         connectors: tuple[str, ...] | None = None,
     ) -> list[tuple]:
@@ -150,7 +180,7 @@ class LpSugar(BaseContract):
         Fetch all token metadata with automatic pagination.
 
         Args:
-            limit: Items per page.
+            limit: Items per page. If None, uses MAX_TOKENS from contract.
             account: Account address for balance queries.
             connectors: Connector tokens (uses instance connectors if None).
 
@@ -160,19 +190,32 @@ class LpSugar(BaseContract):
         if connectors is None:
             connectors = self._connectors
 
+        # Use contract's MAX_TOKENS if no limit specified
+        if limit is None:
+            try:
+                limit = self.max_tokens()
+            except Exception:
+                limit = 2000  # Fallback default
+
         all_results: list[tuple] = []
         offset = 0
 
         while True:
-            result = self.tokens(limit, offset, account, connectors)
+            try:
+                result = self.tokens(limit, offset, account, connectors)
 
-            # Stop if only connectors returned (no new tokens)
-            if len(result) == len(connectors):
+                # Stop if only connectors returned (no new tokens) or empty
+                if not result or len(result) <= len(connectors):
+                    break
+
+                all_results.extend(result)
+                # Increment offset by limit (pagination is index-based)
+                offset += limit
+                logger.debug(f"tokens: fetched {len(result)} items, offset now {offset}")
+
+            except Exception as e:
+                logger.warning(f"tokens pagination error at offset {offset}: {e}")
                 break
-
-            all_results.extend(result)
-            offset += limit
-            logger.debug(f"tokens: fetched {len(result)} items, offset now {offset}")
 
         return all_results
 

@@ -234,7 +234,9 @@ class SugarClient:
             defillama=defillama_source,
         )
 
-    def get_tokens(self, listed_only: bool = True, refresh: bool = False) -> pd.DataFrame:
+    def get_tokens(
+        self, listed_only: bool = True, refresh: bool = False
+    ) -> pd.DataFrame:
         """
         Get token metadata.
 
@@ -296,7 +298,9 @@ class SugarClient:
             ContractNotAvailableError: If RelaySugar is not available.
         """
         raw_data = self.relay.all()
-        return self.processor.process_relay_all(raw_data, filter_inactive=filter_inactive)
+        return self.processor.process_relay_all(
+            raw_data, filter_inactive=filter_inactive
+        )
 
     def get_epochs_latest(self) -> pd.DataFrame:
         """
@@ -309,10 +313,12 @@ class SugarClient:
             ContractNotAvailableError: If RewardsSugar is not available.
         """
         tokens_df = self.get_tokens(listed_only=False)
-        raw_data = self.rewards.epochs_latest_paginated()
+        # Use pool count to inform pagination limit
+        pool_count = self._lp.count()
+        raw_data = self.rewards.epochs_latest_paginated(max_offset=pool_count)
         return self.processor.process_epochs_latest(raw_data, tokens_df)
 
-    def get_pools_with_rewards(self) -> pd.DataFrame:
+    def get_pools_with_rewards(self, only_with_rewards: bool = True) -> pd.DataFrame:
         """
         Get combined LP and epoch rewards data with priced fees/bribes.
 
@@ -321,17 +327,24 @@ class SugarClient:
         - RewardsSugar.epochsLatest() reward data
         - Priced bribes and fees in USD
 
+        Args:
+            only_with_rewards: If True (default), only include pools that have
+                epoch rewards data. This is faster as it reduces the number of
+                pools to process. If False, include all pools.
+
         Returns:
             Combined DataFrame with pool info and priced rewards.
 
         Raises:
             ContractNotAvailableError: If RewardsSugar is not available.
         """
-        tokens_df = self.get_tokens(listed_only=False)
+        tokens_df = self.get_tokens(listed_only=True)
         lp_df = self.get_pools()
         epochs_df = self.get_epochs_latest()
 
-        return self.processor.combine_lp_with_rewards(lp_df, epochs_df, tokens_df)
+        return self.processor.combine_lp_with_rewards(
+            lp_df, epochs_df, tokens_df, only_with_rewards=only_with_rewards
+        )
 
     def export_pools(self, include_block: bool = True) -> Path:
         """

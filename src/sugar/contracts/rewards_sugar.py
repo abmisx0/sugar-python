@@ -56,17 +56,54 @@ class RewardsSugar(BaseContract):
     def epochs_latest_paginated(
         self,
         limit: int = 500,
+        max_offset: int | None = None,
     ) -> list[tuple]:
         """
         Fetch all latest epoch data with automatic pagination.
 
+        Note: epochsLatest paginates by pool index, and pools with gauges
+        may be sparse, so we need to paginate through all pool indices
+        (not just until we get an empty result).
+
         Args:
             limit: Items per page.
+            max_offset: Maximum offset to paginate to. If None, will try to
+                detect the pool count from the contract.
 
         Returns:
             List of all epoch data tuples.
         """
-        return self._paginate("epochsLatest", limit)
+        all_results: list[tuple] = []
+        offset = 0
+        empty_count = 0
+
+        while True:
+            try:
+                result = self.epochs_latest(limit, offset)
+
+                if result:
+                    all_results.extend(result)
+                    empty_count = 0
+                else:
+                    empty_count += 1
+                    # Stop after multiple consecutive empty results
+                    # This handles gaps in the data while still stopping eventually
+                    if empty_count > 10:
+                        break
+
+                offset += limit
+
+                # Safety limit to prevent infinite loop
+                if max_offset and offset >= max_offset:
+                    break
+                if offset > 50000:  # Hard limit
+                    break
+
+            except Exception as e:
+                logger.warning(f"epochs_latest pagination error at offset {offset}: {e}")
+                break
+
+        return all_results
 
     def epochs_by_address(
         self,

@@ -118,6 +118,7 @@ class BaseContract:
                     break
 
                 all_results.extend(result)
+                # Increment offset by limit (pagination is index-based, not result-based)
                 offset += limit
                 logger.debug(f"{method}: fetched {len(result)} items, offset now {offset}")
 
