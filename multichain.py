@@ -63,7 +63,10 @@ class MultiChainSugar:
     def fetch_lp_all(
         self,
         limit: int = 500,
-        parallel: bool = True,
+        parallel: bool = False,  # Sequential by default to avoid rate limits
+        active_only: bool = True,
+        delay: float = 0.5,
+        max_retries: int = 3,
     ) -> pd.DataFrame:
         """
         Fetch LpSugar.all() from all chains and combine into one DataFrame.
@@ -71,6 +74,9 @@ class MultiChainSugar:
         Args:
             limit: Max pools per pagination call
             parallel: Whether to fetch chains in parallel
+            active_only: Only include pools with active gauges (gauge_alive=True)
+            delay: Delay between pagination calls (seconds)
+            max_retries: Max retries on rate limit errors
             
         Returns:
             Combined DataFrame with chain_id and chain_name columns
@@ -85,33 +91,56 @@ class MultiChainSugar:
                 
                 print(f"Fetching LPs from {chain}...")
                 
-                # Paginated fetch
+                # Paginated fetch with retry logic
                 all_lps = []
                 offset = 0
+                retries = 0
+                
                 while True:
                     try:
                         batch = sugar.lp.functions.all(limit, offset, 0).call()
+                        
                         if not batch:
                             break
+                        
                         all_lps.extend(batch)
-                        offset += limit
+                        print(f"  {chain}: fetched {len(all_lps)} pools (offset={offset})")
+                        
                         if len(batch) < limit:
+                            # Last page
                             break
+                        
+                        offset += limit
+                        retries = 0  # Reset retries on success
+                        time.sleep(delay)  # Rate limit protection
+                        
                     except Exception as e:
-                        print(f"  {chain} pagination error at offset {offset}: {e}")
+                        error_str = str(e).lower()
+                        if "429" in error_str or "rate" in error_str or "too many" in error_str:
+                            retries += 1
+                            if retries <= max_retries:
+                                wait_time = delay * (2 ** retries)  # Exponential backoff
+                                print(f"  {chain}: rate limited, waiting {wait_time}s (retry {retries}/{max_retries})")
+                                time.sleep(wait_time)
+                                continue
+                        print(f"  {chain} error at offset {offset}: {e}")
                         break
                 
                 if not all_lps:
                     return None
                 
-                # Create DataFrame - use all columns (root column now on all chains)
+                # Create DataFrame
                 chain_config = CHAINS[chain]
                 df = pd.DataFrame(all_lps, columns=config.COLUMNS_LP)
                 df["chain_id"] = chain_config["chain_id"]
                 df["chain_name"] = chain_config["name"]
                 df["chain_key"] = chain
                 
-                print(f"  {chain}: {len(df)} pools")
+                # Filter to active gauges only
+                if active_only:
+                    df = df[df["gauge_alive"] == True].copy()
+                
+                print(f"  {chain}: {len(df)} pools" + (" (active gauges)" if active_only else ""))
                 return df
                 
             except Exception as e:
@@ -119,7 +148,7 @@ class MultiChainSugar:
                 return None
         
         if parallel:
-            with ThreadPoolExecutor(max_workers=6) as executor:
+            with ThreadPoolExecutor(max_workers=4) as executor:
                 futures = {executor.submit(fetch_chain, c): c for c in self.sugars.keys()}
                 for future in as_completed(futures):
                     df = future.result()
@@ -139,14 +168,19 @@ class MultiChainSugar:
     def fetch_rewards_epochs_latest(
         self,
         limit: int = 200,
-        parallel: bool = True,
+        parallel: bool = False,  # Sequential by default
+        delay: float = 0.5,
+        max_retries: int = 3,
     ) -> pd.DataFrame:
         """
         Fetch RewardsSugar.epochsLatest() from all chains and combine.
+        Only returns pools with active gauges (by design of the contract).
         
         Args:
-            limit: Max epochs to fetch per chain
+            limit: Max epochs to fetch per pagination call
             parallel: Whether to fetch chains in parallel
+            delay: Delay between pagination calls (seconds)
+            max_retries: Max retries on rate limit errors
             
         Returns:
             Combined DataFrame with chain info and parsed bribes/fees
@@ -161,20 +195,39 @@ class MultiChainSugar:
                 
                 print(f"Fetching epochs from {chain}...")
                 
-                # Paginated fetch
+                # Paginated fetch with retry logic
                 all_epochs = []
                 offset = 0
+                retries = 0
+                
                 while True:
                     try:
                         batch = sugar.rewards.functions.epochsLatest(limit, offset).call()
+                        
                         if not batch:
                             break
+                        
                         all_epochs.extend(batch)
-                        offset += limit
+                        print(f"  {chain}: fetched {len(all_epochs)} epochs (offset={offset})")
+                        
                         if len(batch) < limit:
+                            # Last page
                             break
+                        
+                        offset += limit
+                        retries = 0
+                        time.sleep(delay)
+                        
                     except Exception as e:
-                        print(f"  {chain} pagination error at offset {offset}: {e}")
+                        error_str = str(e).lower()
+                        if "429" in error_str or "rate" in error_str or "too many" in error_str:
+                            retries += 1
+                            if retries <= max_retries:
+                                wait_time = delay * (2 ** retries)
+                                print(f"  {chain}: rate limited, waiting {wait_time}s (retry {retries}/{max_retries})")
+                                time.sleep(wait_time)
+                                continue
+                        print(f"  {chain} error at offset {offset}: {e}")
                         break
                 
                 if not all_epochs:
@@ -191,7 +244,7 @@ class MultiChainSugar:
                 df["votes"] = df["votes"].apply(lambda x: float(sugar.w3.from_wei(x, "ether")))
                 df["emissions"] = df["emissions"].apply(lambda x: float(sugar.w3.from_wei(x, "ether")))
                 
-                print(f"  {chain}: {len(df)} epochs")
+                print(f"  {chain}: {len(df)} epochs (active gauges)")
                 return df
                 
             except Exception as e:
@@ -199,7 +252,7 @@ class MultiChainSugar:
                 return None
         
         if parallel:
-            with ThreadPoolExecutor(max_workers=6) as executor:
+            with ThreadPoolExecutor(max_workers=4) as executor:
                 futures = {executor.submit(fetch_chain, c): c for c in self.sugars.keys()}
                 for future in as_completed(futures):
                     df = future.result()
@@ -414,9 +467,16 @@ class MultiChainSugar:
         include_lps: bool = True,
         include_epochs: bool = True,
         price_rewards: bool = True,
+        active_gauges_only: bool = True,
     ) -> dict[str, pd.DataFrame]:
         """
         Fetch all data from all chains.
+        
+        Args:
+            include_lps: Whether to fetch LP data
+            include_epochs: Whether to fetch epoch/rewards data
+            price_rewards: Whether to price bribes/fees in USD
+            active_gauges_only: Only include pools with active gauges
         
         Returns:
             Dict with 'lps' and 'epochs' DataFrames
@@ -425,7 +485,7 @@ class MultiChainSugar:
         
         if include_lps:
             print("\n=== Fetching LP Data ===")
-            result["lps"] = self.fetch_lp_all()
+            result["lps"] = self.fetch_lp_all(active_only=active_gauges_only)
         
         if include_epochs:
             print("\n=== Fetching Epoch/Rewards Data ===")
@@ -447,11 +507,12 @@ def main():
     
     print(f"\nConnected to {len(mc.sugars)} chains")
     
-    # Fetch all data
+    # Fetch all data (active gauges only)
     data = mc.fetch_all_data(
         include_lps=True,
         include_epochs=True,
         price_rewards=True,
+        active_gauges_only=True,
     )
     
     # Export to CSV
