@@ -1,0 +1,44 @@
+[
+  {
+    "inputs": [{"name": "_limit", "type": "uint256"}, {"name": "_offset", "type": "uint256"}],
+    "name": "all",
+    "outputs": [{"components": [{"name": "id", "type": "uint256"}, {"name": "account", "type": "address"}, {"name": "decimals", "type": "uint8"}, {"name": "amount", "type": "uint128"}, {"name": "voting_amount", "type": "uint256"}, {"name": "governance_amount", "type": "uint256"}, {"name": "rebase_amount", "type": "uint256"}, {"name": "expires_at", "type": "uint256"}, {"name": "voted_at", "type": "uint256"}, {"components": [{"name": "lp", "type": "address"}, {"name": "weight", "type": "uint256"}], "name": "votes", "type": "tuple[]"}, {"name": "token", "type": "address"}, {"name": "permanent", "type": "bool"}, {"name": "delegate_id", "type": "uint256"}, {"name": "managed_id", "type": "uint256"}], "name": "", "type": "tuple[]"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"name": "_account", "type": "address"}],
+    "name": "byAccount",
+    "outputs": [{"components": [{"name": "id", "type": "uint256"}, {"name": "account", "type": "address"}, {"name": "decimals", "type": "uint8"}, {"name": "amount", "type": "uint128"}, {"name": "voting_amount", "type": "uint256"}, {"name": "governance_amount", "type": "uint256"}, {"name": "rebase_amount", "type": "uint256"}, {"name": "expires_at", "type": "uint256"}, {"name": "voted_at", "type": "uint256"}, {"components": [{"name": "lp", "type": "address"}, {"name": "weight", "type": "uint256"}], "name": "votes", "type": "tuple[]"}, {"name": "token", "type": "address"}, {"name": "permanent", "type": "bool"}, {"name": "delegate_id", "type": "uint256"}, {"name": "managed_id", "type": "uint256"}], "name": "", "type": "tuple[]"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"name": "_id", "type": "uint256"}],
+    "name": "byId",
+    "outputs": [{"components": [{"name": "id", "type": "uint256"}, {"name": "account", "type": "address"}, {"name": "decimals", "type": "uint8"}, {"name": "amount", "type": "uint128"}, {"name": "voting_amount", "type": "uint256"}, {"name": "governance_amount", "type": "uint256"}, {"name": "rebase_amount", "type": "uint256"}, {"name": "expires_at", "type": "uint256"}, {"name": "voted_at", "type": "uint256"}, {"components": [{"name": "lp", "type": "address"}, {"name": "weight", "type": "uint256"}], "name": "votes", "type": "tuple[]"}, {"name": "token", "type": "address"}, {"name": "permanent", "type": "bool"}, {"name": "delegate_id", "type": "uint256"}, {"name": "managed_id", "type": "uint256"}], "name": "", "type": "tuple"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "voter",
+    "outputs": [{"name": "", "type": "address"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "token",
+    "outputs": [{"name": "", "type": "address"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "ve",
+    "outputs": [{"name": "", "type": "address"}],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
