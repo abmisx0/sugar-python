@@ -16,14 +16,39 @@ from chains import CHAINS, list_chains
 import config
 
 
-# CoinGecko chain IDs for token pricing
-COINGECKO_CHAIN_IDS = {
-    "op": "optimistic-ethereum",
+# 1inch OffchainOracle addresses (spot price aggregator)
+# https://github.com/1inch/spot-price-aggregator
+SPOT_ORACLE_ADDRESSES = {
+    "op": "0x00000000000D6FFc74A8feb35aF5827bf57f6786",
+    "base": "0x00000000000D6FFc74A8feb35aF5827bf57f6786",
+    "unichain": "0x00000000000D6FFc74A8feb35aF5827bf57f6786",
+    # Other chains may not have the oracle deployed
+}
+
+# USDC addresses for USD conversion (used as quote token)
+USDC_ADDRESSES = {
+    "op": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+    "base": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "mode": "0xd988097fb8612cc24eeC14542bC03424c656005f",
+    "lisk": "0xF242275d3a6527d877f2c927a82D9b057609cc71",
+    "fraxtal": "0xDcc0F2D8F90FDe85b10aC1c8Ab57dc0AE946A543",
+    "ink": "0xF1815bd50389c46847f0Bda824eC8da914045D14",
+    "soneium": "0xBA9986D2381edf1DA03B0B9c1f8b00dC4AacC369",
+    "superseed": "0x08052a94b1c0Bd6FED95F57a6f8BFE51d6040B3b",
+    "swell": "0x082ECA5aC396670A85E0892a9BBF920B4C191bc0",
+    "unichain": "0x078D782b760474a361dDA0AF3839290b0EF57AD6",
+    "celo": "0xcebA9300f2b948710d2653dD7B07f33A8B32118C",
+    "metal": "0xb8d74e8b46D02aCE72F7A8B3F80C9607dBa9B5F4",
+}
+
+# DeFiLlama chain IDs for fallback pricing
+LLAMA_CHAIN_IDS = {
+    "op": "optimism",
     "base": "base",
     "mode": "mode",
     "lisk": "lisk",
     "fraxtal": "fraxtal",
-    "metal": "metal-l2",
+    "metal": "metal",
     "ink": "ink",
     "soneium": "soneium",
     "superseed": "superseed",
@@ -32,8 +57,8 @@ COINGECKO_CHAIN_IDS = {
     "celo": "celo",
 }
 
-# Fallback stablecoin addresses (for chains where we know the price is ~$1)
-STABLECOIN_SYMBOLS = {"USDC", "USDT", "DAI", "FRAX", "USDbC", "LUSD", "sUSD", "DOLA", "eUSD", "EURC", "USD+"}
+# Spot price oracle ABI (1inch OffchainOracle)
+SPOT_ORACLE_ABI = '[{"inputs":[{"internalType":"contract IERC20","name":"srcToken","type":"address"},{"internalType":"contract IERC20","name":"dstToken","type":"address"},{"internalType":"bool","name":"useWrappers","type":"bool"}],"name":"getRate","outputs":[{"internalType":"uint256","name":"weightedRate","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"contract IERC20","name":"srcToken","type":"address"},{"internalType":"bool","name":"useSrcWrappers","type":"bool"}],"name":"getRateToEth","outputs":[{"internalType":"uint256","name":"weightedRate","type":"uint256"}],"stateMutability":"view","type":"function"}]'
 
 
 class MultiChainSugar:
@@ -269,10 +294,58 @@ class MultiChainSugar:
         
         return pd.concat(results, ignore_index=True)
     
+    def _get_spot_oracle_prices_batch(self, chain: str, token_addrs: list[str]) -> dict[str, float]:
+        """
+        Get token prices from 1inch spot price oracle for multiple tokens.
+        Returns dict of {token_addr: price_usd}.
+        """
+        sugar = self.sugars.get(chain)
+        if not sugar:
+            return {}
+        
+        oracle_addr = SPOT_ORACLE_ADDRESSES.get(chain)
+        usdc_addr = USDC_ADDRESSES.get(chain)
+        
+        if not oracle_addr or not usdc_addr:
+            return {}
+        
+        prices = {}
+        oracle = sugar.w3.eth.contract(
+            address=sugar.w3.to_checksum_address(oracle_addr),
+            abi=SPOT_ORACLE_ABI
+        )
+        
+        for token_addr in token_addrs:
+            try:
+                # Get token decimals (cached)
+                src_decimals = self._get_token_decimals(chain, token_addr)
+                dst_decimals = 6  # USDC always 6 decimals
+                
+                # Get rate: token -> USDC
+                rate = oracle.functions.getRate(
+                    sugar.w3.to_checksum_address(token_addr),
+                    sugar.w3.to_checksum_address(usdc_addr),
+                    True  # useWrappers
+                ).call()
+                
+                if rate > 0:
+                    # Price = rate * 10^srcDecimals / 10^18 / 10^dstDecimals
+                    price = rate * (10 ** src_decimals) / (10 ** 18) / (10 ** dst_decimals)
+                    if price > 0:
+                        prices[token_addr.lower()] = price
+                        
+            except Exception:
+                # Oracle doesn't have this token
+                pass
+        
+        return prices
+    
     def fetch_token_prices(self, df: pd.DataFrame) -> dict[str, dict[str, float]]:
         """
-        Fetch token prices for all unique tokens in the DataFrame.
-        Uses DeFiLlama API for better coverage.
+        Fetch token prices using:
+        1. Spot price oracle (1inch) - primary
+        2. DeFiLlama API - fallback
+        3. $0 for unknown tokens
         
         Args:
             df: DataFrame with bribes/fees columns containing token addresses
@@ -280,54 +353,6 @@ class MultiChainSugar:
         Returns:
             Dict of chain -> {token_address: price_usd}
         """
-        # Chain name mapping for DeFiLlama
-        LLAMA_CHAINS = {
-            "op": "optimism",
-            "base": "base",
-            "mode": "mode",
-            "lisk": "lisk",
-            "fraxtal": "fraxtal",
-            "metal": "metal",
-            "ink": "ink",
-            "soneium": "soneium",
-            "superseed": "superseed",
-            "swell": "swell",
-            "unichain": "unichain",
-            "celo": "celo",
-        }
-        
-        # Known token prices (fallback)
-        KNOWN_PRICES = {
-            # ETH derivatives
-            "eth": 3200.0,
-            "weth": 3200.0,
-            "wsteth": 3700.0,
-            "steth": 3200.0,
-            "reth": 3500.0,
-            "cbeth": 3400.0,
-            "frxeth": 3200.0,
-            "sweth": 3300.0,
-            # Stablecoins
-            "usdc": 1.0,
-            "usdt": 1.0,
-            "dai": 1.0,
-            "frax": 1.0,
-            "lusd": 1.0,
-            "susd": 1.0,
-            "usdbc": 1.0,
-            "dola": 1.0,
-            "eusd": 1.0,
-            "usd+": 1.0,
-            # Protocol tokens (approximate)
-            "velo": 0.08,
-            "aero": 0.80,
-            "op": 1.50,
-            "mode": 0.02,
-            "lsk": 0.80,
-            "celo": 0.50,
-            "swell": 0.03,
-        }
-        
         # Collect all unique tokens per chain
         tokens_by_chain: dict[str, set[str]] = {}
         
@@ -349,47 +374,79 @@ class MultiChainSugar:
                 continue
                 
             prices[chain] = {}
-            llama_chain = LLAMA_CHAINS.get(chain)
-            
-            if not llama_chain:
-                continue
-            
-            # Batch tokens for DeFiLlama (format: chain:address)
             token_list = list(tokens)
             
-            # Build coin IDs for DeFiLlama
-            coins = [f"{llama_chain}:{addr}" for addr in token_list]
+            # Step 1: Try spot price oracle (batch)
+            oracle_available = chain in SPOT_ORACLE_ADDRESSES
+            if oracle_available:
+                print(f"  {chain}: fetching {len(token_list)} prices from spot oracle...", flush=True)
+                oracle_prices = self._get_spot_oracle_prices_batch(chain, token_list)
+                prices[chain].update(oracle_prices)
+                print(f"  {chain}: got {len(prices[chain])}/{len(token_list)} from oracle", flush=True)
             
-            # DeFiLlama allows batching
-            batch_size = 100
-            for i in range(0, len(coins), batch_size):
-                batch = coins[i:i+batch_size]
-                
-                try:
-                    url = "https://coins.llama.fi/prices/current/" + ",".join(batch)
-                    resp = requests.get(url, timeout=15)
+            # Step 2: DeFiLlama fallback for missing tokens
+            missing_tokens = [t for t in token_list if t not in prices[chain]]
+            if missing_tokens:
+                llama_chain = LLAMA_CHAIN_IDS.get(chain)
+                if llama_chain:
+                    print(f"  {chain}: fetching {len(missing_tokens)} prices from DeFiLlama...")
+                    coins = [f"{llama_chain}:{addr}" for addr in missing_tokens]
                     
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        for coin_id, price_data in data.get("coins", {}).items():
-                            if "price" in price_data:
-                                # Extract address from coin_id (chain:address)
-                                addr = coin_id.split(":")[-1].lower()
-                                prices[chain][addr] = price_data["price"]
-                    
-                    time.sleep(0.5)  # Rate limit
-                    
-                except Exception as e:
-                    print(f"  Price fetch error for {chain}: {e}")
+                    batch_size = 100
+                    for i in range(0, len(coins), batch_size):
+                        batch = coins[i:i+batch_size]
+                        
+                        try:
+                            url = "https://coins.llama.fi/prices/current/" + ",".join(batch)
+                            resp = requests.get(url, timeout=15)
+                            
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                for coin_id, price_data in data.get("coins", {}).items():
+                                    if "price" in price_data:
+                                        addr = coin_id.split(":")[-1].lower()
+                                        prices[chain][addr] = price_data["price"]
+                            
+                            time.sleep(0.3)
+                            
+                        except Exception as e:
+                            print(f"  {chain}: DeFiLlama error: {e}")
             
-            # Apply known prices as fallback for missing tokens
-            for addr in token_list:
-                if addr not in prices[chain]:
-                    # Try to match by common patterns
-                    prices[chain][addr] = 1.0  # Default to $1 for unknown bribe/fee tokens
+            # Step 3: Unknown tokens get $0 (not $1)
+            still_missing = [t for t in token_list if t not in prices[chain]]
+            if still_missing:
+                print(f"  {chain}: {len(still_missing)} tokens without price (set to $0)")
+                for addr in still_missing:
+                    prices[chain][addr] = 0.0
         
         self.token_prices = prices
         return prices
+    
+    def _get_token_decimals(self, chain: str, token_addr: str) -> int:
+        """Get token decimals, default to 18 if unavailable."""
+        sugar = self.sugars.get(chain)
+        if not sugar:
+            return 18
+        
+        # Check cache
+        cache_key = f"{chain}:{token_addr.lower()}"
+        if not hasattr(self, '_decimals_cache'):
+            self._decimals_cache = {}
+        if cache_key in self._decimals_cache:
+            return self._decimals_cache[cache_key]
+        
+        try:
+            # ERC20 decimals() call
+            erc20_abi = '[{"inputs":[],"name":"decimals","outputs":[{"type":"uint8"}],"stateMutability":"view","type":"function"}]'
+            contract = sugar.w3.eth.contract(
+                address=sugar.w3.to_checksum_address(token_addr),
+                abi=erc20_abi
+            )
+            decimals = contract.functions.decimals().call()
+            self._decimals_cache[cache_key] = decimals
+            return decimals
+        except:
+            return 18  # Default
     
     def price_rewards_data(
         self,
@@ -398,10 +455,11 @@ class MultiChainSugar:
     ) -> pd.DataFrame:
         """
         Add USD pricing to bribes and fees columns.
+        Uses spot price oracle + DeFiLlama for pricing.
         
         Args:
             df: DataFrame from fetch_rewards_epochs_latest()
-            fetch_prices: Whether to fetch fresh prices from CoinGecko
+            fetch_prices: Whether to fetch fresh prices
             
         Returns:
             DataFrame with additional columns: bribes_usd, fees_usd
@@ -410,8 +468,8 @@ class MultiChainSugar:
             print("Fetching token prices...")
             self.fetch_token_prices(df)
         
-        def calculate_usd_value(items: list, chain: str, sugar: Sugar) -> float:
-            """Calculate total USD value of a list of (token_addr, amount) tuples."""
+        def calculate_usd_value(items: list, chain: str) -> float:
+            """Calculate total USD value of a list of (token_addr, amount_wei) tuples."""
             if not items:
                 return 0.0
             
@@ -424,18 +482,15 @@ class MultiChainSugar:
                 
                 token_addr_lower = token_addr.lower()
                 
-                # Get price
-                price = chain_prices.get(token_addr_lower)
+                # Get price (0 if unknown)
+                price = chain_prices.get(token_addr_lower, 0.0)
+                if price <= 0:
+                    continue
                 
-                # Assume stablecoins are $1 if not found
-                if price is None:
-                    # Try to identify stablecoin by checking known addresses
-                    # For now, assume 18 decimals and check if it's a known stable
-                    price = 1.0  # Default assumption for unknown tokens in bribes (often stables)
+                # Get token decimals and convert amount
+                decimals = self._get_token_decimals(chain, token_addr)
+                amount = amount_wei / (10 ** decimals)
                 
-                # Convert from wei (assuming 18 decimals for simplicity)
-                # In production, you'd want to fetch actual decimals
-                amount = float(sugar.w3.from_wei(amount_wei, "ether"))
                 total_usd += amount * price
             
             return round(total_usd, 2)
@@ -446,15 +501,9 @@ class MultiChainSugar:
         
         for _, row in df.iterrows():
             chain = row["chain_key"]
-            sugar = self.sugars.get(chain)
             
-            if not sugar:
-                bribes_usd.append(0.0)
-                fees_usd.append(0.0)
-                continue
-            
-            bribes_usd.append(calculate_usd_value(row.get("bribes", []), chain, sugar))
-            fees_usd.append(calculate_usd_value(row.get("fees", []), chain, sugar))
+            bribes_usd.append(calculate_usd_value(row.get("bribes", []), chain))
+            fees_usd.append(calculate_usd_value(row.get("fees", []), chain))
         
         df["bribes_usd"] = bribes_usd
         df["fees_usd"] = fees_usd
