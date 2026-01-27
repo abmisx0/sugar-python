@@ -299,10 +299,14 @@ class DataProcessor:
         # Add priced columns if price provider is available
         if self._prices and tokens_df is not None:
             combined["bribes_usd"] = combined["bribes"].apply(
-                lambda x: self._price_rewards(x, tokens_df) if x else Decimal(0)
+                lambda x: self._price_rewards(x, tokens_df)
+                if isinstance(x, list) and x
+                else Decimal(0)
             )
             combined["fees_usd"] = combined["fees"].apply(
-                lambda x: self._price_rewards(x, tokens_df) if x else Decimal(0)
+                lambda x: self._price_rewards(x, tokens_df)
+                if isinstance(x, list) and x
+                else Decimal(0)
             )
 
         return combined
