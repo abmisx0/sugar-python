@@ -1,7 +1,7 @@
 """Example: Update veNFT lock data for a chain.
 
 This script demonstrates how to fetch and export veNFT (vote-escrow NFT)
-data using the new SugarClient API.
+data using the SugarClient API.
 """
 
 from sugar import SugarClient, ChainId
@@ -23,7 +23,7 @@ def update_lock_data(chain: ChainId | str) -> None:
     print(f"Found {len(ve_df)} veNFTs")
 
     # Export to CSV
-    path = client.export_ve_positions()
+    path = client.export_dataframe(ve_df, "ve_positions")
     print(f"veNFTs exported to: {path}")
 
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pandas as pd
@@ -97,111 +96,10 @@ class TestToJson:
         assert len(df_read) == 3
 
 
-class TestExportLpData:
-    """Test export_lp_data method."""
-
-    def test_exports_lp_data(
-        self, export_service: ExportService, sample_df: pd.DataFrame
-    ) -> None:
-        """Should export LP data to correct location."""
-        path = export_service.export_lp_data(sample_df, "base")
-
-        assert path.exists()
-        assert "data-lp" in str(path)
-        assert "lp_all_base" in path.name
-
-    def test_includes_block_number(
-        self, export_service: ExportService, sample_df: pd.DataFrame
-    ) -> None:
-        """Should include block number in filename."""
-        path = export_service.export_lp_data(sample_df, "base", block_num=12345)
-
-        assert "12345" in path.name
-
-    def test_no_block_number(
-        self, export_service: ExportService, sample_df: pd.DataFrame
-    ) -> None:
-        """Should work without block number."""
-        path = export_service.export_lp_data(sample_df, "base")
-
-        assert path.exists()
-
-
-class TestExportTokens:
-    """Test export_tokens method."""
-
-    def test_exports_tokens(
-        self, export_service: ExportService, sample_df: pd.DataFrame
-    ) -> None:
-        """Should export token data."""
-        path = export_service.export_tokens(sample_df, "base")
-
-        assert path.exists()
-        assert "lp_tokens_base" in path.name
-
-
-class TestExportVeData:
-    """Test export_ve_data method."""
-
-    def test_exports_ve_data(
-        self, export_service: ExportService, sample_df: pd.DataFrame
-    ) -> None:
-        """Should export VE data."""
-        path = export_service.export_ve_data(sample_df, "base")
-
-        assert path.exists()
-        assert "data-ve" in str(path)
-        assert "ve_all_base" in path.name
-
-
-class TestExportRelayData:
-    """Test export_relay_data method."""
-
-    def test_exports_relay_data(
-        self, export_service: ExportService, sample_df: pd.DataFrame
-    ) -> None:
-        """Should export relay data."""
-        path = export_service.export_relay_data(sample_df, "base")
-
-        assert path.exists()
-        assert "data-relay" in str(path)
-        assert "relay_all_base" in path.name
-
-
-class TestExportEpochs:
-    """Test export_epochs method."""
-
-    def test_exports_epochs(
-        self, export_service: ExportService, sample_df: pd.DataFrame
-    ) -> None:
-        """Should export epoch data."""
-        path = export_service.export_epochs(sample_df, "base")
-
-        assert path.exists()
-        assert "data-rewards" in str(path)
-        assert "epochs_latest_base" in path.name
-
-
-class TestExportCombined:
-    """Test export_combined method."""
-
-    def test_exports_combined(
-        self, export_service: ExportService, sample_df: pd.DataFrame
-    ) -> None:
-        """Should export combined data."""
-        path = export_service.export_combined(sample_df, "base")
-
-        assert path.exists()
-        assert "data-combined" in str(path)
-        assert "pools_with_rewards_base" in path.name
-
-
 class TestSaveRaw:
     """Test save_raw method."""
 
-    def test_saves_raw_data(
-        self, export_service: ExportService
-    ) -> None:
+    def test_saves_raw_data(self, export_service: ExportService) -> None:
         """Should save raw string data."""
         data = "This is raw data content"
         path = export_service.save_raw(data, "raw.txt")
@@ -209,9 +107,7 @@ class TestSaveRaw:
         assert path.exists()
         assert path.read_text() == data
 
-    def test_creates_subdirectory(
-        self, export_service: ExportService
-    ) -> None:
+    def test_creates_subdirectory(self, export_service: ExportService) -> None:
         """Should create subdirectory."""
         data = "test"
         path = export_service.save_raw(data, "test.txt", subdirectory="raw")

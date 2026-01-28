@@ -1,7 +1,7 @@
 """Example: Update relay data for a chain.
 
 This script demonstrates how to fetch and export relay data
-using the new SugarClient API.
+using the SugarClient API.
 """
 
 from sugar import SugarClient, ChainId
@@ -22,7 +22,7 @@ def update_relay_data(chain: ChainId | str, filter_inactive: bool = True) -> Non
     print(f"Found {len(relay_df)} relays")
 
     # Export to CSV
-    path = client.export_relays()
+    path = client.export_dataframe(relay_df, "relays")
     print(f"Relays exported to: {path}")
 
 

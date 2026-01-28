@@ -249,47 +249,42 @@ class TestSugarClientExportMethods:
 
     @patch("sugar.core.client.Web3Provider")
     @patch("sugar.core.client.LpSugar")
-    def test_export_pools(
+    def test_export_dataframe(
         self,
         mock_lp_class: MagicMock,
         mock_provider_class: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """Should export pools to CSV."""
+        """Should export DataFrame to CSV."""
         mock_provider = MagicMock()
         mock_provider.block_number = 12345
         mock_provider_class.return_value = mock_provider
-
-        mock_lp = MagicMock()
-        mock_lp.all_paginated.return_value = []
-        mock_lp.tokens_paginated.return_value = []
-        mock_lp_class.return_value = mock_lp
+        mock_lp_class.return_value = MagicMock()
 
         client = SugarClient(ChainId.BASE, export_dir=tmp_path)
-        path = client.export_pools()
+        df = pd.DataFrame({"col1": [1, 2, 3], "col2": ["a", "b", "c"]})
+        path = client.export_dataframe(df, "test_data")
 
         assert path.exists()
-        assert "lp_all" in path.name
+        assert "test_data_base_12345.csv" == path.name
 
     @patch("sugar.core.client.Web3Provider")
     @patch("sugar.core.client.LpSugar")
-    def test_export_tokens(
+    def test_export_dataframe_no_block(
         self,
         mock_lp_class: MagicMock,
         mock_provider_class: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """Should export tokens to CSV."""
-        mock_provider_class.return_value = MagicMock()
-
-        mock_lp = MagicMock()
-        mock_lp.tokens_paginated.return_value = [
-            ("0xtoken1", "WETH", 18, "Wrapped Ether", True, 1000),
-        ]
-        mock_lp_class.return_value = mock_lp
+        """Should export DataFrame without block number."""
+        mock_provider = MagicMock()
+        mock_provider.block_number = 12345
+        mock_provider_class.return_value = mock_provider
+        mock_lp_class.return_value = MagicMock()
 
         client = SugarClient(ChainId.BASE, export_dir=tmp_path)
-        path = client.export_tokens()
+        df = pd.DataFrame({"col1": [1, 2, 3]})
+        path = client.export_dataframe(df, "test_data", include_block=False)
 
         assert path.exists()
-        assert "lp_tokens" in path.name
+        assert "test_data_base.csv" == path.name

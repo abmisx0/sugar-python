@@ -1,7 +1,7 @@
 """Example: Update LP pool data for a chain.
 
 This script demonstrates how to fetch and export LP pool data
-using the new SugarClient API.
+using the SugarClient API.
 """
 
 from sugar import SugarClient, ChainId
@@ -13,12 +13,14 @@ def update_lp_data(chain: ChainId | str) -> None:
 
     print(f"Fetching LP data for {client.chain_name}...")
 
-    # Export tokens
-    token_path = client.export_tokens()
+    # Get and export tokens
+    tokens_df = client.get_tokens(listed_only=False)
+    token_path = client.export_dataframe(tokens_df, "tokens", include_block=False)
     print(f"Tokens exported to: {token_path}")
 
-    # Export pools
-    pool_path = client.export_pools()
+    # Get and export pools
+    pools_df = client.get_pools()
+    pool_path = client.export_dataframe(pools_df, "pools")
     print(f"Pools exported to: {pool_path}")
 
 
