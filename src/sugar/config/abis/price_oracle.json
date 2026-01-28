@@ -1,0 +1,51 @@
+[
+  {
+    "inputs": [{"name": "srcToken", "type": "address"}, {"name": "dstToken", "type": "address"}, {"name": "useWrappers", "type": "bool"}],
+    "name": "getRate",
+    "outputs": [{"name": "weightedRate", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"name": "srcToken", "type": "address"}, {"name": "dstToken", "type": "address"}, {"name": "useWrappers", "type": "bool"}, {"name": "thresholdFilter", "type": "uint256"}],
+    "name": "getRateWithThreshold",
+    "outputs": [{"name": "weightedRate", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"name": "srcToken", "type": "address"}, {"name": "useSrcWrappers", "type": "bool"}],
+    "name": "getRateToEth",
+    "outputs": [{"name": "weightedRate", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"name": "srcToken", "type": "address"}, {"name": "useSrcWrappers", "type": "bool"}, {"name": "thresholdFilter", "type": "uint256"}],
+    "name": "getRateToEthWithThreshold",
+    "outputs": [{"name": "weightedRate", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"name": "srcToken", "type": "address"}, {"name": "useSrcWrappers", "type": "bool"}, {"name": "customConnectors", "type": "address[]"}, {"name": "thresholdFilter", "type": "uint256"}],
+    "name": "getRateToEthWithCustomConnectors",
+    "outputs": [{"name": "weightedRate", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"name": "srcTokens", "type": "address[]"}, {"name": "useWrappers", "type": "bool"}, {"name": "customConnectors", "type": "address[]"}, {"name": "thresholdFilter", "type": "uint256"}],
+    "name": "getManyRatesToEthWithCustomConnectors",
+    "outputs": [{"name": "weightedRates", "type": "uint256[]"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"name": "srcToken", "type": "address"}, {"name": "dstToken", "type": "address"}, {"name": "useWrappers", "type": "bool"}, {"name": "customConnectors", "type": "address[]"}, {"name": "thresholdFilter", "type": "uint256"}],
+    "name": "getRateWithCustomConnectors",
+    "outputs": [{"name": "weightedRate", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

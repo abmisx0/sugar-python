@@ -1,31 +1,110 @@
-.venv
-.vscode
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Environments
 .env
-.conda
-__pycache__
-.DS_Store
+.env.local
+.env.*.local
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.conda/
+
+# IDE / Editor
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+*~
 *.code-workspace
-.github
+
+# Claude Code
+.claude/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# pyright
+pyrightconfig.json
+
+# Node (if using any JS tooling)
+node_modules/
+
+# Data export directories (generated outputs)
+/data*/
+/exports/
 *.csv
-test.py
-*.ts
-*.json
 
-/data-voters
-/data-relay-depositors
-/data-lp
-/data-relay
-/data-ve
-/test
-/node_modules
-/internal
-
-create-rootPool.py
-note.md
-positions.py
-spice-script.py
-sugar-sdk.py
-sqrtpriceX96.ipynb
-sqrtpriceX96.py
-universal-router-decoder.py
-universal-router-decoder.ipynb
+# Local development / scratch files
+/scratch/
+/test/
+/internal/
