@@ -421,11 +421,16 @@ class SugarClient:
         block = self.block_number if include_block else None
         return self._export.export_epochs(df, self._config.name.lower(), block)
 
-    def export_pools_with_rewards(self, include_block: bool = True) -> Path:
+    def export_pools_with_rewards(
+        self,
+        df: pd.DataFrame | None = None,
+        include_block: bool = True,
+    ) -> Path:
         """
         Export combined LP and rewards data to CSV.
 
         Args:
+            df: Optional pre-computed DataFrame. If not provided, fetches fresh data.
             include_block: Whether to include block number in filename.
 
         Returns:
@@ -434,6 +439,38 @@ class SugarClient:
         Raises:
             ContractNotAvailableError: If RewardsSugar is not available.
         """
-        df = self.get_pools_with_rewards()
+        if df is None:
+            df = self.get_pools_with_rewards()
         block = self.block_number if include_block else None
         return self._export.export_combined(df, self._config.name.lower(), block)
+
+    def export_dataframe(
+        self,
+        df: pd.DataFrame,
+        name: str,
+        subdirectory: str = "data",
+        include_block: bool = True,
+        index: bool = True,
+    ) -> Path:
+        """
+        Export any DataFrame to CSV with standard naming.
+
+        This is a generalized export function for any DataFrame.
+
+        Args:
+            df: DataFrame to export.
+            name: Base name for the file (e.g., "pools", "tokens").
+            subdirectory: Subdirectory within export dir (default: "data").
+            include_block: Whether to include block number in filename.
+            index: Whether to include DataFrame index in output.
+
+        Returns:
+            Path to exported file.
+        """
+        chain = self._config.name.lower()
+        if include_block:
+            filename = f"{name}_{chain}_{self.block_number}.csv"
+        else:
+            filename = f"{name}_{chain}.csv"
+
+        return self._export.to_csv(df, filename, subdirectory=subdirectory, index=index)

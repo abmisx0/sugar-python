@@ -13,6 +13,8 @@ import requests
 from sugar.core.exceptions import PriceNotAvailableError
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from sugar.config.chains import ChainId
     from sugar.contracts.price_oracle import SpotPriceOracle
 
@@ -47,22 +49,82 @@ class OraclePriceSource:
     Converts ETH prices to USD using stablecoin rates.
     """
 
-    # Known stablecoin addresses per chain (for ETH/USD conversion)
+    # Known stablecoin addresses per chain (normalized to lowercase)
+    # These return $1.00 directly without oracle lookup
     STABLECOINS = {
         # Base
-        "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": "USDC",  # Base USDC
+        "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",  # USDC
+        "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca",  # USDbC
+        "0xb79dd08ea68a908a97220c76d19a6aa9cbde4376",  # USD+
+        "0xcfa3ef56d303ae4faaba0592388f19d7c3399fb4",  # eUSD
+        "0x4621b7a9c75199271f773ebd9a499dbd165c3191",  # DOLA
+        "0x50c5725949a6f0c72e6c4a641f24049a917db0cb",  # DAI
         # Optimism
-        "0x0b2c639c533813f4aa9d7837caf62653d097ff85": "USDC",  # OP USDC
-        "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58": "USDT",  # OP USDT
+        "0x0b2c639c533813f4aa9d7837caf62653d097ff85",  # USDC
+        "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",  # USDT
+        "0x2e3d870790dc77a83dd1d18184acc7439a53f475",  # FRAX
+        "0x73cb180bf0521828d8849bc8cf2b920918e23032",  # USD+
+        "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1",  # DAI
+        "0xbfd291da8a403daaf7e5e9dc1ec0aceacd4848b9",  # USX
+        "0x8c6f28f2f1a3c87f0f938b96d27520d9751ec8d9",  # sUSD
+        "0xc40f949f8a4e094d1b49a23ea9241d289b7b2819",  # LUSD
+        # Mode
+        "0x1217bfe6c773eec6cc4a38b5dc45b92292b6e189",  # oUSDT
+        # Lisk
+        "0x43f2376d5d03553ae72f4a8093bbe9de4336eb08",  # USDT0
+        # Soneium
+        "0xba9986d2381edf1da03b0b9c1f8b00dc4aacc369",  # USDC.e
+        # Unichain
+        "0x078d782b760474a361dda0af3839290b0ef57ad6",  # USDC
+        # Superseed
+        "0x1217bfe6c773eec6cc4a38b5dc45b92292b6e189",  # oUSDT
+        # Metal
+        "0x51e85d70944256710cb141847f1a04f568c1db0e",  # USDC.e
+        # Swell
+        "0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34",  # USDe
+        # Fraxtal
+        "0xfc00000000000000000000000000000000000001",  # frxUSD
+        "0xdcc0f2d8f90fde85b10ac1c8ab57dc0ae946a543",  # USDC
+        # Celo
+        "0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e",  # USDT
+        # Ink
+        "0x0200c29006150606b650577bbe7b6248f58470c1",  # USDT0
     }
 
     # WETH address (same on all OP Stack chains)
     WETH_ADDRESS = "0x4200000000000000000000000000000000000006"
 
+    # Known token decimals (for oracle rate adjustment)
+    # Maps lowercase address -> decimals
+    # Only needed for tokens that don't have 18 decimals
+    KNOWN_DECIMALS: dict[str, int] = {
+        # 6 decimal tokens
+        "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": 6,  # Base USDC
+        "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca": 6,  # Base USDbC
+        "0x0b2c639c533813f4aa9d7837caf62653d097ff85": 6,  # OP USDC
+        "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58": 6,  # OP USDT
+        "0x60a3e35cc302bfa44cb288bc5a4f316fdb1adb42": 6,  # Base EURC
+        "0xba9986d2381edf1da03b0b9c1f8b00dc4aacc369": 6,  # Soneium USDC.e
+        "0x078d782b760474a361dda0af3839290b0ef57ad6": 6,  # Unichain USDC
+        "0x51e85d70944256710cb141847f1a04f568c1db0e": 6,  # Metal USDC.e
+        "0xdcc0f2d8f90fde85b10ac1c8ab57dc0ae946a543": 6,  # Fraxtal USDC
+        "0x1217bfe6c773eec6cc4a38b5dc45b92292b6e189": 6,  # Mode/Superseed oUSDT
+        "0x43f2376d5d03553ae72f4a8093bbe9de4336eb08": 6,  # Lisk USDT0
+        "0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e": 6,  # Celo USDT
+        "0x0200c29006150606b650577bbe7b6248f58470c1": 6,  # Ink USDT0
+        # 8 decimal tokens
+        "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf": 8,  # Base cbBTC
+        "0x03c7054bcb39f7b2e5b2c7acb37583e32d70cfa3": 8,  # Lisk WBTC
+        "0x6f36dbd829de9b7e077db8a35b480d4329ceb331": 8,  # Superseed cbBTC
+        "0x6c84a8f1c29108f47a79964b5fe888d4f4d0de40": 8,  # OP tBTC
+        "0x73e0c0d45e048d25fc26fa3159b0aa04bfa4db98": 8,  # Ink kBTC
+    }
+
     def __init__(
         self,
         oracle: SpotPriceOracle,
         usdc_address: str | None = None,
+        tokens_df: "pd.DataFrame | None" = None,
     ) -> None:
         """
         Initialize oracle price source.
@@ -70,9 +132,11 @@ class OraclePriceSource:
         Args:
             oracle: SpotPriceOracle contract wrapper.
             usdc_address: USDC address on this chain for USD conversion.
+            tokens_df: Optional token metadata DataFrame with decimals column.
         """
         self._oracle = oracle
         self._usdc_address = usdc_address
+        self._tokens_df = tokens_df
         # Cache for individual token prices (ETH-denominated)
         self._eth_price_cache: dict[str, Decimal] = {}
         # Cached ETH/USD rate
@@ -111,9 +175,11 @@ class OraclePriceSource:
                 threshold=10,
             )
             if rates and rates[0] > 0:
-                # rates[0] = how many ETH for 1 USDC
-                # So ETH/USD = 1 / rates[0]
-                self._eth_usd_rate = Decimal("1") / rates[0]
+                # Adjust rate for stablecoin decimals (USDC is 6 decimals)
+                adjusted_rate = self._adjust_rate_for_decimals(rates[0], stablecoin)
+                # adjusted_rate = how many ETH for 1 USDC
+                # So ETH/USD = 1 / adjusted_rate
+                self._eth_usd_rate = Decimal("1") / adjusted_rate
                 self._eth_usd_timestamp = time.time()
                 logger.debug(f"ETH/USD rate: {self._eth_usd_rate}")
                 return self._eth_usd_rate
@@ -123,19 +189,82 @@ class OraclePriceSource:
         # Fallback
         return Decimal("3000")
 
+    def _is_stablecoin(self, token_address: str) -> bool:
+        """Check if token is a known stablecoin."""
+        return token_address.lower() in self.STABLECOINS
+
+    def _get_token_decimals(self, token_address: str) -> int:
+        """
+        Get token decimals for oracle rate adjustment.
+
+        Args:
+            token_address: Token address.
+
+        Returns:
+            Token decimals (defaults to 18 if unknown).
+        """
+        addr_lower = token_address.lower()
+
+        # Check known decimals first
+        if addr_lower in self.KNOWN_DECIMALS:
+            return self.KNOWN_DECIMALS[addr_lower]
+
+        # Check tokens DataFrame if available
+        if self._tokens_df is not None and token_address in self._tokens_df.index:
+            try:
+                return int(self._tokens_df.loc[token_address, "decimals"])
+            except (KeyError, ValueError):
+                pass
+
+        # Default to 18 decimals
+        return 18
+
+    def _adjust_rate_for_decimals(
+        self, rate: Decimal, token_address: str
+    ) -> Decimal:
+        """
+        Adjust oracle rate for token decimals.
+
+        The oracle returns rates assuming 10^18 smallest token units.
+        For tokens with D decimals, we need to multiply by 10^(D-18).
+
+        Args:
+            rate: Raw rate from oracle (already divided by 10^18).
+            token_address: Token address.
+
+        Returns:
+            Adjusted rate for 1 whole token.
+        """
+        decimals = self._get_token_decimals(token_address)
+        if decimals == 18:
+            return rate
+
+        # Adjust for non-18 decimal tokens
+        adjustment = Decimal(10) ** (decimals - 18)
+        return rate * adjustment
+
+    def set_tokens_df(self, tokens_df: "pd.DataFrame") -> None:
+        """
+        Set token metadata DataFrame for decimal lookups.
+
+        Args:
+            tokens_df: Token metadata DataFrame indexed by address.
+        """
+        self._tokens_df = tokens_df
+
     def get_price_usd(self, token_address: str) -> Decimal | None:
         """Get token price in USD via oracle (uses cache)."""
         token_lower = token_address.lower()
 
         # If token is a stablecoin, return 1
-        if token_lower in self.STABLECOINS:
+        if self._is_stablecoin(token_address):
             return Decimal("1.0")
 
         # If token is WETH, return ETH/USD rate
         if token_lower == self.WETH_ADDRESS.lower():
             return self._get_eth_usd_rate()
 
-        # Check cache for ETH-denominated price
+        # Check cache for ETH-denominated price (already decimal-adjusted)
         if token_lower in self._eth_price_cache:
             eth_price = self._eth_price_cache[token_lower]
             if eth_price > 0:
@@ -150,8 +279,10 @@ class OraclePriceSource:
                 threshold=10,
             )
             if rates and rates[0] > 0:
-                self._eth_price_cache[token_lower] = rates[0]
-                return rates[0] * self._get_eth_usd_rate()
+                # Adjust rate for token decimals before caching
+                adjusted_rate = self._adjust_rate_for_decimals(rates[0], token_address)
+                self._eth_price_cache[token_lower] = adjusted_rate
+                return adjusted_rate * self._get_eth_usd_rate()
         except Exception as e:
             logger.debug(f"Oracle price fetch failed for {token_address}: {e}")
 
@@ -173,7 +304,7 @@ class OraclePriceSource:
             addr_lower = addr.lower()
             if addr_lower in self._eth_price_cache:
                 continue
-            if addr_lower in self.STABLECOINS:
+            if self._is_stablecoin(addr):
                 continue
             if addr_lower == self.WETH_ADDRESS.lower():
                 continue
@@ -194,10 +325,12 @@ class OraclePriceSource:
                     use_wrappers=False,
                     threshold=10,
                 )
-                # Cache the results
+                # Cache the results (adjusted for decimals)
                 for j, addr in enumerate(batch):
                     if j < len(rates):
-                        self._eth_price_cache[addr.lower()] = rates[j]
+                        # Adjust rate for token decimals before caching
+                        adjusted_rate = self._adjust_rate_for_decimals(rates[j], addr)
+                        self._eth_price_cache[addr.lower()] = adjusted_rate
             except Exception as e:
                 logger.warning(f"Batch price fetch failed for {len(batch)} tokens: {e}")
                 # Cache zeros for failed tokens so we don't retry

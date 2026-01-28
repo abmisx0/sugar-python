@@ -102,9 +102,9 @@ def get_pools_with_rewards(chain: ChainId | str, only_with_rewards: bool = True)
                 f"Bribes: ${float(bribes_usd or 0):,.2f} | Fees: ${float(fees_usd or 0):,.2f}"
             )
 
-    # Export to CSV
+    # Export to CSV (pass combined_df to avoid refetching)
     print(f"\n{'='*70}")
-    path = client.export_pools_with_rewards()
+    path = client.export_pools_with_rewards(df=combined_df)
     print(f"Combined data exported to: {path}")
     print(f"{'='*70}\n")
 

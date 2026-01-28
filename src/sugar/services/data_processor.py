@@ -372,6 +372,10 @@ class DataProcessor:
 
         # Add priced columns if price provider is available
         if self._prices and tokens_df is not None:
+            # Set tokens_df on oracle source for decimal lookups
+            if hasattr(self._prices, "_oracle") and self._prices._oracle is not None:
+                self._prices._oracle.set_tokens_df(tokens_df)
+
             # Pre-collect all unique tokens that need pricing
             unique_tokens = self._collect_unique_tokens(combined, tokens_df)
             logger.debug(f"Prefetching prices for {len(unique_tokens)} unique tokens")
