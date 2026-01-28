@@ -50,7 +50,7 @@ class RewardsSugar(BaseContract):
             offset: Starting offset.
 
         Returns:
-            List of epoch data tuples (ts, lp, votes, emissions, bribes, fees).
+            List of epoch data tuples (ts, lp, votes, emissions, incentives, fees).
         """
         return self._call("epochsLatest", limit, offset)
 

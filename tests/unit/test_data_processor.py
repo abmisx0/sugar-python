@@ -88,7 +88,7 @@ class TestProcessEpochsLatest:
                 "0xpool",  # lp
                 1000000000000000000000,  # votes
                 1000000000000000000,  # emissions
-                (),  # bribes
+                (),  # incentives
                 (),  # fees
             ),
         ]

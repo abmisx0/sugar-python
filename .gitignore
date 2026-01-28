@@ -100,7 +100,7 @@ pyrightconfig.json
 node_modules/
 
 # Data export directories (generated outputs)
-/data-*/
+/data*/
 /exports/
 *.csv
 

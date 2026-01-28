@@ -85,7 +85,7 @@ COLUMNS_LP_EPOCH = (
     "lp",
     "votes",
     "emissions",
-    "bribes",
+    "incentives",  # voting incentives (formerly "bribes")
     "fees",
 )
 
@@ -93,7 +93,7 @@ COLUMNS_LP_EPOCH = (
 COLUMNS_LP_EPOCH_CONVERT = (
     "votes",
     "emissions",
-    "bribes",
+    "incentives",
     "fees",
 )
 
@@ -189,5 +189,5 @@ COLUMNS_RELAY_EXPORT = (
 # Column rename mappings
 COLUMN_RENAMES = {
     "votes": "votes (lp, weight)",
-    "bribes": "bribes (token, amount)",
+    "incentives": "incentives (token, amount)",
 }

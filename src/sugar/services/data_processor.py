@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -301,16 +302,16 @@ class DataProcessor:
         df["votes"] = df["votes"].apply(lambda x: float(from_wei(x, 18)))
         df["emissions"] = df["emissions"].apply(lambda x: float(from_wei(x, 18)))
 
-        # Process bribes and fees with token decimals
+        # Process incentives (formerly bribes) and fees with token decimals
         if tokens_df is not None:
-            df["bribes"] = df["bribes"].apply(
+            df["incentives"] = df["incentives"].apply(
                 lambda x: self._process_rewards_with_decimals(x, tokens_df)
             )
             df["fees"] = df["fees"].apply(
                 lambda x: self._process_rewards_with_decimals(x, tokens_df)
             )
         else:
-            df["bribes"] = df["bribes"].apply(self._process_rewards_default)
+            df["incentives"] = df["incentives"].apply(self._process_rewards_default)
             df["fees"] = df["fees"].apply(self._process_rewards_default)
 
         return df
@@ -364,7 +365,7 @@ class DataProcessor:
         # Merge on lp address - use inner join to only get pools with rewards
         join_type = "inner" if only_with_rewards else "left"
         combined = lp_df.merge(
-            epochs_df[["lp", "votes", "emissions", "bribes", "fees"]],
+            epochs_df[["lp", "votes", "emissions", "incentives", "fees"]],
             on="lp",
             how=join_type,
             suffixes=("", "_epoch"),
@@ -384,14 +385,16 @@ class DataProcessor:
             self._prices.prefetch_prices(unique_tokens)
 
             # Now apply pricing (will use cached prices)
-            combined["bribes_usd"] = combined["bribes"].apply(
+            # Incentives (formerly bribes) - voting incentives from external sources
+            combined["incentives_usd"] = combined["incentives"].apply(
                 lambda x: (
                     self._price_rewards(x, tokens_df)
                     if isinstance(x, list) and x
                     else Decimal(0)
                 )
             )
-            combined["fees_usd"] = combined["fees"].apply(
+            # Gauge fees - fees collected by the gauge and distributed to voters
+            combined["gauge_fees_usd"] = combined["fees"].apply(
                 lambda x: (
                     self._price_rewards(x, tokens_df)
                     if isinstance(x, list) and x
@@ -399,8 +402,8 @@ class DataProcessor:
                 )
             )
 
-            # Add bribe token prices array
-            combined["bribe_token_prices"] = combined["bribes"].apply(
+            # Add incentive token prices array
+            combined["incentive_token_prices"] = combined["incentives"].apply(
                 lambda x: (
                     self._get_reward_token_prices(x, tokens_df)
                     if isinstance(x, list) and x
@@ -421,6 +424,7 @@ class DataProcessor:
                 ),
                 axis=1,
             )
+            combined["tvl_usd"] = combined["reserve0_usd"] + combined["reserve1_usd"]
             combined["token0_fees_usd"] = combined.apply(
                 lambda row: self._price_token_amount(
                     row["token0_fees"], row["token0"], tokens_df
@@ -433,6 +437,15 @@ class DataProcessor:
                 ),
                 axis=1,
             )
+            combined["pool_fees_usd"] = (
+                combined["token0_fees_usd"] + combined["token1_fees_usd"]
+            )
+            # Projected pool fees = pool_fees_usd scaled by time remaining in epoch
+            # Epochs reset every Wednesday at midnight UTC
+            epoch_multiplier = self._get_epoch_projection_multiplier()
+            combined["projected_pool_fees_usd"] = combined["pool_fees_usd"] * Decimal(
+                str(epoch_multiplier)
+            )
             combined["token0_usd"] = combined.apply(
                 lambda row: self._get_token_price(row["token0"], tokens_df),
                 axis=1,
@@ -443,6 +456,36 @@ class DataProcessor:
             )
 
         return combined
+
+    def _get_epoch_projection_multiplier(self) -> float:
+        """
+        Calculate the multiplier to project pool fees for the full epoch.
+
+        Epochs are 7 days and reset every Thursday at midnight UTC.
+        If we're X days into the epoch, multiply fees by 7/X to project full week.
+
+        Returns:
+            Multiplier for fee projection (e.g., 1.4 if 5 days have passed).
+        """
+        from datetime import timedelta
+
+        now = datetime.now(timezone.utc)
+
+        # Find the most recent Thursday at midnight UTC
+        # Thursday = weekday 3
+        days_since_thursday = (now.weekday() - 3) % 7
+        last_thursday = now - timedelta(days=days_since_thursday)
+        last_thursday = last_thursday.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Days elapsed in current epoch
+        days_elapsed = (now - last_thursday).total_seconds() / 86400
+
+        # Avoid division by zero - if epoch just started, use small minimum
+        if days_elapsed < 0.01:
+            days_elapsed = 0.01
+
+        # Project to full 7 days
+        return 7.0 / days_elapsed
 
     def _collect_unique_tokens(
         self,
@@ -467,11 +510,11 @@ class DataProcessor:
         if "token1" in combined_df.columns:
             unique_tokens.update(combined_df["token1"].dropna().unique())
 
-        # Collect tokens from bribes
-        if "bribes" in combined_df.columns:
-            for bribes in combined_df["bribes"].dropna():
-                if isinstance(bribes, list):
-                    for token, _ in bribes:
+        # Collect tokens from incentives
+        if "incentives" in combined_df.columns:
+            for incentives in combined_df["incentives"].dropna():
+                if isinstance(incentives, list):
+                    for token, _ in incentives:
                         unique_tokens.add(token)
 
         # Collect tokens from fees

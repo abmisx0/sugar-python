@@ -137,7 +137,7 @@ def sample_epoch_tuple() -> tuple[Any, ...]:
         "0xpool_address",  # lp
         1000000000000000000000,  # votes
         1000000000000000000,  # emissions
-        (  # bribes array
+        (  # incentives array (voting incentives)
             (
                 "0xtoken1",
                 1000000000000000000,
