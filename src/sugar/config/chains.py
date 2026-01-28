@@ -201,7 +201,7 @@ CHAIN_CONFIGS: dict[ChainId, ChainConfig] = {
         rpc_env_var="RPC_LINK_LISK",
         lp_sugar_address="0x2002618dd63228670698200069E42f4422e82497",
         rewards_sugar_address="0xB1d0DFFe6260982164B53EdAcD3ccd58B081889d",
-        price_oracle_address="0x59114D308C6DE4A84F5F8cD80485a5481047b99f",
+        price_oracle_address="0x024503003fFE9AF285f47c1DaAaA497D9f1166D0",
         connectors=CONNECTORS_LISK,
     ),
     ChainId.FRAXTAL: ChainConfig(
@@ -210,7 +210,7 @@ CHAIN_CONFIGS: dict[ChainId, ChainConfig] = {
         rpc_env_var="RPC_LINK_FRAXTAL",
         lp_sugar_address="0xc703cDA5468bE663e4546C495E1D0E503082A8e0",
         rewards_sugar_address="0xbDD1d5A9d9566F575bC59cE33C8F77ACa5cF924b",
-        price_oracle_address="0x59114D308C6DE4A84F5F8cD80485a5481047b99f",
+        price_oracle_address="0x4817f8D70aE32Ee96e5E6BFA24eb7Fcfa83bbf29",
         connectors=CONNECTORS_FRAXTAL,
     ),
     ChainId.INK: ChainConfig(
@@ -219,7 +219,7 @@ CHAIN_CONFIGS: dict[ChainId, ChainConfig] = {
         rpc_env_var="RPC_LINK_INK",
         lp_sugar_address="0x46e07c9b4016f8E5c3cD0b2fd20147A4d0972120",
         rewards_sugar_address="0xc100DC20aff9907E833a6aDEDDB52fC310554fF2",
-        price_oracle_address="0x59114D308C6DE4A84F5F8cD80485a5481047b99f",
+        price_oracle_address="0xe58920a8c684CD3d6dCaC2a41b12998e4CB17EfE",
         connectors=CONNECTORS_INK,
     ),
     ChainId.SONEIUM: ChainConfig(
@@ -228,7 +228,7 @@ CHAIN_CONFIGS: dict[ChainId, ChainConfig] = {
         rpc_env_var="RPC_LINK_SONEIUM",
         lp_sugar_address="0xf25D27572E122F78101FA5c37e94Cb2E880D8Edb",
         rewards_sugar_address="0xbDD1d5A9d9566F575bC59cE33C8F77ACa5cF924b",
-        price_oracle_address="0x59114D308C6DE4A84F5F8cD80485a5481047b99f",
+        price_oracle_address="0xe58920a8c684CD3d6dCaC2a41b12998e4CB17EfE",
         connectors=CONNECTORS_SONEIUM,
     ),
     ChainId.METAL: ChainConfig(
@@ -237,7 +237,7 @@ CHAIN_CONFIGS: dict[ChainId, ChainConfig] = {
         rpc_env_var="RPC_LINK_METAL",
         lp_sugar_address="0xB2CaA2742DD3b640e7f76EdfE74C84f725150014",
         rewards_sugar_address="0xbDD1d5A9d9566F575bC59cE33C8F77ACa5cF924b",
-        price_oracle_address="0x59114D308C6DE4A84F5F8cD80485a5481047b99f",
+        price_oracle_address="0x3e71CCdf495d9628D3655A600Bcad3afF2ddea98",
         connectors=CONNECTORS_METAL,
     ),
     ChainId.CELO: ChainConfig(
@@ -255,7 +255,7 @@ CHAIN_CONFIGS: dict[ChainId, ChainConfig] = {
         rpc_env_var="RPC_LINK_SUPERSEED",
         lp_sugar_address="0x0Fb2AF1052D5f39540400E167EE5ACCb3cD2AF00",
         rewards_sugar_address="0xbDD1d5A9d9566F575bC59cE33C8F77ACa5cF924b",
-        price_oracle_address="0x59114D308C6DE4A84F5F8cD80485a5481047b99f",
+        price_oracle_address="0xe58920a8c684CD3d6dCaC2a41b12998e4CB17EfE",
         connectors=CONNECTORS_SUPERSEED,
     ),
     ChainId.SWELL: ChainConfig(
@@ -264,7 +264,7 @@ CHAIN_CONFIGS: dict[ChainId, ChainConfig] = {
         rpc_env_var="RPC_LINK_SWELL",
         lp_sugar_address="0x215cEad02e0b9E0E494DD179585C18a772048a43",
         rewards_sugar_address="0xbDD1d5A9d9566F575bC59cE33C8F77ACa5cF924b",
-        price_oracle_address="0x59114D308C6DE4A84F5F8cD80485a5481047b99f",
+        price_oracle_address="0xe58920a8c684CD3d6dCaC2a41b12998e4CB17EfE",
         connectors=CONNECTORS_SWELL,
     ),
     ChainId.UNICHAIN: ChainConfig(
@@ -273,7 +273,7 @@ CHAIN_CONFIGS: dict[ChainId, ChainConfig] = {
         rpc_env_var="RPC_LINK_UNICHAIN",
         lp_sugar_address="0x46e07c9b4016f8E5c3cD0b2fd20147A4d0972120",
         rewards_sugar_address="0xbDD1d5A9d9566F575bC59cE33C8F77ACa5cF924b",
-        price_oracle_address="0x59114D308C6DE4A84F5F8cD80485a5481047b99f",
+        price_oracle_address="0xe58920a8c684CD3d6dCaC2a41b12998e4CB17EfE",
         connectors=CONNECTORS_UNICHAIN,
     ),
 }

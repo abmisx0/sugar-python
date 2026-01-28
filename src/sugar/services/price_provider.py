@@ -94,6 +94,17 @@ class OraclePriceSource:
     # WETH address (same on all OP Stack chains)
     WETH_ADDRESS = "0x4200000000000000000000000000000000000006"
 
+    # Token aliases: maps bridged tokens to their canonical counterparts for pricing
+    # Key = bridged token address (lowercase), Value = canonical token address
+    # The canonical address should be priceable on the oracle
+    TOKEN_ALIASES: dict[str, str] = {
+        # Bridged OP token -> Canonical OP on Optimism
+        # Used on: Mode, Lisk, Fraxtal, Ink, Soneium, Metal, Superseed, Swell, Unichain
+        "0xafcc6ae807187a31e84138f3860d4ce27973e01b": "0x4200000000000000000000000000000000000042",
+        # Bridged CELO token -> Canonical CELO on Celo
+        "0x83e04b17ce5ccc1b1dcab192c618776114fa064a": "0x471ece3750da237f93b8e339c536989b8978a438",
+    }
+
     # Known token decimals (for oracle rate adjustment)
     # Maps lowercase address -> decimals
     # Only needed for tokens that don't have 18 decimals
@@ -193,6 +204,21 @@ class OraclePriceSource:
         """Check if token is a known stablecoin."""
         return token_address.lower() in self.STABLECOINS
 
+    def _resolve_alias(self, token_address: str) -> str:
+        """
+        Resolve token alias to canonical address for pricing.
+
+        Some bridged tokens (e.g., OP on L2s) should use the price of
+        their canonical counterpart on the main chain.
+
+        Args:
+            token_address: Token address to resolve.
+
+        Returns:
+            Canonical token address (or original if no alias).
+        """
+        return self.TOKEN_ALIASES.get(token_address.lower(), token_address)
+
     def _get_token_decimals(self, token_address: str) -> int:
         """
         Get token decimals for oracle rate adjustment.
@@ -254,6 +280,7 @@ class OraclePriceSource:
 
     def get_price_usd(self, token_address: str) -> Decimal | None:
         """Get token price in USD via oracle (uses cache)."""
+        original_address = token_address
         token_lower = token_address.lower()
 
         # If token is a stablecoin, return 1
@@ -264,9 +291,14 @@ class OraclePriceSource:
         if token_lower == self.WETH_ADDRESS.lower():
             return self._get_eth_usd_rate()
 
+        # Resolve alias (e.g., bridged OP -> canonical OP)
+        resolved_address = self._resolve_alias(token_address)
+        resolved_lower = resolved_address.lower()
+
         # Check cache for ETH-denominated price (already decimal-adjusted)
-        if token_lower in self._eth_price_cache:
-            eth_price = self._eth_price_cache[token_lower]
+        # Use resolved address for cache lookup
+        if resolved_lower in self._eth_price_cache:
+            eth_price = self._eth_price_cache[resolved_lower]
             if eth_price > 0:
                 return eth_price * self._get_eth_usd_rate()
             return None
@@ -274,17 +306,17 @@ class OraclePriceSource:
         # Not in cache - fetch individually (should be rare after batch prefetch)
         try:
             rates = self._oracle.get_many_rates_to_eth(
-                src_tokens=[token_address],
+                src_tokens=[resolved_address],
                 use_wrappers=False,
                 threshold=10,
             )
             if rates and rates[0] > 0:
                 # Adjust rate for token decimals before caching
-                adjusted_rate = self._adjust_rate_for_decimals(rates[0], token_address)
-                self._eth_price_cache[token_lower] = adjusted_rate
+                adjusted_rate = self._adjust_rate_for_decimals(rates[0], resolved_address)
+                self._eth_price_cache[resolved_lower] = adjusted_rate
                 return adjusted_rate * self._get_eth_usd_rate()
         except Exception as e:
-            logger.debug(f"Oracle price fetch failed for {token_address}: {e}")
+            logger.debug(f"Oracle price fetch failed for {original_address}: {e}")
 
         return None
 
@@ -298,17 +330,23 @@ class OraclePriceSource:
         Args:
             token_addresses: List of token addresses to prefetch.
         """
-        # Filter out already cached tokens and stablecoins
+        # Resolve aliases and filter out already cached tokens and stablecoins
         tokens_to_fetch = []
         for addr in token_addresses:
-            addr_lower = addr.lower()
-            if addr_lower in self._eth_price_cache:
+            # Resolve alias (e.g., bridged OP -> canonical OP)
+            resolved_addr = self._resolve_alias(addr)
+            resolved_lower = resolved_addr.lower()
+
+            if resolved_lower in self._eth_price_cache:
                 continue
-            if self._is_stablecoin(addr):
+            if self._is_stablecoin(resolved_addr):
                 continue
-            if addr_lower == self.WETH_ADDRESS.lower():
+            if resolved_lower == self.WETH_ADDRESS.lower():
                 continue
-            tokens_to_fetch.append(addr)
+            tokens_to_fetch.append(resolved_addr)
+
+        # Deduplicate (multiple aliased tokens may resolve to same canonical)
+        tokens_to_fetch = list(dict.fromkeys(tokens_to_fetch))
 
         if not tokens_to_fetch:
             return
