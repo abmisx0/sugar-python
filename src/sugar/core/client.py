@@ -320,12 +320,19 @@ class SugarClient:
 
     def get_pools_with_rewards(self, only_with_rewards: bool = True) -> pd.DataFrame:
         """
-        Get combined LP and epoch rewards data with priced fees/bribes.
+        Get combined LP and epoch rewards data with priced fees and incentives.
 
         This is the main convenience method that combines:
         - LpSugar.all() pool data
         - RewardsSugar.epochsLatest() reward data
-        - Priced bribes and fees in USD
+        - Priced incentives (voting incentives) and fees in USD
+
+        Returned columns include:
+        - tvl_usd: Total value locked (reserve0_usd + reserve1_usd)
+        - pool_fees_usd: Trading fees (token0_fees_usd + token1_fees_usd)
+        - projected_pool_fees_usd: Projected fees for full epoch
+        - incentives_usd: Voting incentives in USD
+        - gauge_fees_usd: Gauge fees in USD
 
         Args:
             only_with_rewards: If True (default), only include pools that have

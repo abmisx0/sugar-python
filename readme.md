@@ -1,6 +1,6 @@
 # Sugar Python Library
 
-Python library for interacting with Sugar Protocol contracts on multiple EVM chains.
+Python library for interacting with Velodrome/Aerodrome Sugar Protocol contracts on multiple EVM chains.
 
 ## Features
 
@@ -37,9 +37,12 @@ pools = client.get_pools()
 # Get token metadata
 tokens = client.get_tokens()
 
-# Export data to CSV
-client.export_pools()
-client.export_tokens()
+# Get combined pools with rewards (fees + incentives priced in USD)
+combined = client.get_pools_with_rewards()
+
+# Export any DataFrame to CSV
+client.export_dataframe(pools, "pools")
+client.export_dataframe(tokens, "tokens", include_block=False)
 ```
 
 ## Configuration
@@ -127,13 +130,10 @@ combined_df = client.get_pools_with_rewards()
 ### Export Methods
 
 ```python
-# Export to CSV
-client.export_pools()              # data-lp/lp_all_base_*.csv
-client.export_tokens()             # data-lp/lp_tokens_base.csv
-client.export_ve_positions()       # data-ve/ve_all_base_*.csv
-client.export_relays()             # data-relay/relay_all_base_*.csv
-client.export_epochs()             # data-rewards/epochs_latest_base_*.csv
-client.export_pools_with_rewards() # data-combined/pools_with_rewards_base_*.csv
+# Export any DataFrame to CSV with standard naming
+client.export_dataframe(df, "pools")                    # exports/data/pools_base_12345678.csv
+client.export_dataframe(df, "tokens", include_block=False)  # exports/data/tokens_base.csv
+client.export_dataframe(df, "custom", subdirectory="my-data")  # exports/my-data/custom_base_12345678.csv
 ```
 
 ### Price Provider
@@ -155,22 +155,43 @@ Price sources (in order):
 2. **CoinGecko** (API fallback)
 3. **DefiLlama** (Secondary API fallback)
 
+### Combined Pools with Rewards
+
+The `get_pools_with_rewards()` method returns a DataFrame with:
+
+- **Pool data**: symbol, reserves, TVL, pool type, etc.
+- **Epoch rewards**: votes, emissions for the current epoch
+- **USD-priced columns**:
+  - `tvl_usd` - Total value locked (reserve0_usd + reserve1_usd)
+  - `pool_fees_usd` - Trading fees earned (token0_fees_usd + token1_fees_usd)
+  - `projected_pool_fees_usd` - Projected fees for full epoch
+  - `incentives_usd` - Voting incentives in USD
+  - `gauge_fees_usd` - Gauge fees in USD
+
+```python
+# Get combined data
+df = client.get_pools_with_rewards()
+
+# Access key columns
+print(df[['symbol', 'tvl_usd', 'incentives_usd', 'gauge_fees_usd', 'votes']])
+```
+
 ## Supported Chains
 
 | Chain | ID | LP | VE | Relay | Rewards | Oracle |
 |-------|-----|:--:|:--:|:-----:|:-------:|:------:|
-| Base | 8453 | Yes | Yes | Yes | Yes | Yes |
-| Optimism | 10 | Yes | Yes | Yes | Yes | Yes |
-| Mode | 34443 | Yes | - | - | Yes | Yes |
-| Lisk | 1135 | Yes | - | - | Yes | Yes |
-| Fraxtal | 252 | Yes | - | - | Yes | Yes |
-| Ink | 57073 | Yes | - | - | Yes | Yes |
-| Soneium | 1868 | Yes | - | - | Yes | Yes |
-| Metal | 1750 | Yes | - | - | Yes | Yes |
-| Celo | 42220 | Yes | - | - | Yes | Yes |
-| Superseed | 5330 | Yes | - | - | Yes | Yes |
-| Swell | 1923 | Yes | - | - | Yes | Yes |
-| Unichain | 130 | Yes | - | - | Yes | Yes |
+| Base | 8453 | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Optimism | 10 | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Mode | 34443 | ✓ | - | - | ✓ | ✓ |
+| Lisk | 1135 | ✓ | - | - | ✓ | ✓ |
+| Fraxtal | 252 | ✓ | - | - | ✓ | ✓ |
+| Ink | 57073 | ✓ | - | - | ✓ | ✓ |
+| Soneium | 1868 | ✓ | - | - | ✓ | ✓ |
+| Metal | 1750 | ✓ | - | - | ✓ | ✓ |
+| Celo | 42220 | ✓ | - | - | ✓ | ✓ |
+| Superseed | 5330 | ✓ | - | - | ✓ | ✓ |
+| Swell | 1923 | ✓ | - | - | ✓ | ✓ |
+| Unichain | 130 | ✓ | - | - | ✓ | ✓ |
 
 ## Examples
 
@@ -179,10 +200,25 @@ See the `examples/` directory for complete usage examples:
 - `update-lp-data.py` - Export LP pool and token data
 - `update-relay-data.py` - Export relay data
 - `update-lock-data.py` - Export veNFT lock data
-- `pools-with-rewards.py` - Combined LP + rewards with pricing
+- `pools-with-rewards.py` - Combined LP + rewards with pricing (supports multi-chain)
 - `max-lock-analysis.py` - Analyze max-locked veNFTs
 - `pool-voters.py` - Analyze voters for specific pools
 - `veToken-holders.py` - Analyze veToken holder distribution
+
+### Multi-chain Example
+
+The `pools-with-rewards.py` script supports fetching data from multiple chains:
+
+```bash
+# Aerodrome (Base only)
+python examples/pools-with-rewards.py --aero
+
+# Velodrome (all other chains)
+python examples/pools-with-rewards.py --velo
+
+# All chains
+python examples/pools-with-rewards.py --all
+```
 
 ## Development
 
@@ -214,10 +250,10 @@ ruff format src/
 ```
 sugar-python/
 ├── src/sugar/
-│   ├── __init__.py          # Public API
+│   ├── __init__.py          # Public API exports
 │   ├── core/
 │   │   ├── client.py        # SugarClient facade
-│   │   ├── web3_provider.py # Web3 connection
+│   │   ├── web3_provider.py # Web3 connection management
 │   │   ├── pagination.py    # Pagination utilities
 │   │   └── exceptions.py    # Custom exceptions
 │   ├── contracts/
@@ -225,22 +261,22 @@ sugar-python/
 │   │   ├── ve_sugar.py      # VE Sugar wrapper
 │   │   ├── relay_sugar.py   # Relay Sugar wrapper
 │   │   ├── rewards_sugar.py # Rewards Sugar wrapper
-│   │   └── price_oracle.py  # Spot Price Oracle
+│   │   └── price_oracle.py  # Spot Price Oracle wrapper
 │   ├── config/
 │   │   ├── chains.py        # Chain configurations
-│   │   ├── addresses.py     # Contract addresses
-│   │   ├── columns.py       # DataFrame columns
+│   │   ├── columns.py       # DataFrame column definitions
 │   │   └── abis/            # Contract ABIs
 │   ├── services/
-│   │   ├── data_processor.py  # Data transformation
-│   │   ├── price_provider.py  # Price fetching
-│   │   └── export.py          # CSV/JSON export
+│   │   ├── data_processor.py  # Data transformation & USD pricing
+│   │   ├── price_provider.py  # Multi-source price fetching
+│   │   └── export.py          # CSV/JSON export utilities
 │   └── utils/
-│       ├── wei.py           # Wei conversion
-│       └── cache.py         # Caching utilities
+│       ├── wei.py           # Wei conversion utilities
+│       ├── cache.py         # TTL caching decorator
+│       └── logging.py       # Logging configuration
 ├── tests/
-│   ├── unit/                # Unit tests
-│   └── integration/         # Integration tests
+│   ├── unit/                # Unit tests (mocked)
+│   └── integration/         # Integration tests (live RPC)
 └── examples/                # Usage examples
 ```
 

@@ -7,7 +7,7 @@ name = "sugar-python"
 version = "0.1.0"
 description = "Python library for Velodrome/Aerodrome Sugar Protocol"
 readme = "README.md"
-license = "MIT"
+license = "GPL-3.0-or-later"
 requires-python = ">=3.10"
 authors = [
     { name = "Sugar Python Contributors" }
@@ -16,7 +16,7 @@ keywords = ["velodrome", "aerodrome", "defi", "ethereum", "web3"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
