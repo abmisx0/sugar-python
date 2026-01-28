@@ -4,16 +4,12 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING
-
 import dotenv
 from web3 import Web3
 from web3.contract import Contract
 
+from sugar.config.chains import ChainConfig
 from sugar.core.exceptions import RpcConnectionError
-
-if TYPE_CHECKING:
-    from sugar.config.chains import ChainConfig
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +30,11 @@ class Web3Provider:
         dotenv.load_dotenv()
         self._config = chain_config
         self._web3: Web3 | None = None
+
+    @property
+    def config(self) -> ChainConfig:
+        """Get the chain configuration."""
+        return self._config
 
     @property
     def web3(self) -> Web3:

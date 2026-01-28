@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from web3 import Web3
 from web3.contract import Contract
@@ -17,6 +17,23 @@ logger = logging.getLogger(__name__)
 
 # Path to ABI files
 ABI_DIR = Path(__file__).parent.parent / "config" / "abis"
+
+# Global progress callback for RPC calls
+# Signature: callback(chain: str, sugar_type: str, method: str, offset: int | None)
+_progress_callback: Callable[[str, str, str, int | None], None] | None = None
+
+
+def set_progress_callback(
+    callback: Callable[[str, str, str, int | None], None] | None,
+) -> None:
+    """Set a global callback for RPC call progress."""
+    global _progress_callback
+    _progress_callback = callback
+
+
+def get_progress_callback() -> Callable[[str, str, str, int | None], None] | None:
+    """Get the current progress callback."""
+    return _progress_callback
 
 
 def load_abi(name: str) -> list[dict]:
@@ -30,6 +47,7 @@ class BaseContract:
     """Base class for Sugar contract wrappers."""
 
     ABI_NAME: str = ""  # Override in subclass
+    SUGAR_TYPE: str = ""  # Override in subclass (e.g., "Lp", "Rewards", "Ve", "Relay")
 
     def __init__(
         self,
@@ -73,17 +91,28 @@ class BaseContract:
         """Web3 contract instance."""
         return self._contract
 
-    def _call(self, method: str, *args: Any) -> Any:
+    def _report_progress(self, method: str, offset: int | None = None) -> None:
+        """Report RPC call progress if callback is set."""
+        callback = get_progress_callback()
+        if callback:
+            chain = self._provider.config.name if hasattr(self._provider, "config") else "unknown"
+            sugar_type = self.SUGAR_TYPE or self.__class__.__name__
+            callback(chain, sugar_type, method, offset)
+
+    def _call(self, method: str, *args: Any, _skip_progress: bool = False) -> Any:
         """
         Call a contract method.
 
         Args:
             method: Method name.
             *args: Method arguments.
+            _skip_progress: Internal flag to skip progress reporting (used by paginated methods).
 
         Returns:
             Method result.
         """
+        if not _skip_progress:
+            self._report_progress(method)
         func = getattr(self._contract.functions, method)
         return func(*args).call()
 
@@ -111,6 +140,8 @@ class BaseContract:
 
         while True:
             try:
+                self._report_progress(method, offset)
+                # Call contract directly instead of through _call to avoid double reporting
                 func = getattr(self._contract.functions, method)
                 result = func(limit, offset, *extra_args).call()
 
@@ -155,6 +186,8 @@ class BaseContract:
 
         while True:
             try:
+                self._report_progress(method, offset)
+                # Call contract directly instead of through _call to avoid double reporting
                 func = getattr(self._contract.functions, method)
                 result = func(current_limit, offset).call()
 

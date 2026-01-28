@@ -25,6 +25,7 @@ class SpotPriceOracle(BaseContract):
     """
 
     ABI_NAME = "price_oracle"
+    SUGAR_TYPE = "PriceOracle"
 
     def __init__(
         self,

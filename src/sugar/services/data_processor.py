@@ -199,7 +199,12 @@ class DataProcessor:
         df.set_index("id", inplace=True)
 
         if convert_amounts:
-            for col in ["amount", "voting_amount", "governance_amount", "rebase_amount"]:
+            for col in [
+                "amount",
+                "voting_amount",
+                "governance_amount",
+                "rebase_amount",
+            ]:
                 df[col] = df[col].apply(lambda x: float(from_wei(x, 18)))
 
         if process_votes:
@@ -250,7 +255,9 @@ class DataProcessor:
 
             # Process votes with used_voting_amount
             df["votes"] = df.apply(
-                lambda row: self._process_relay_votes(row["votes"], row["used_voting_amount"]),
+                lambda row: self._process_relay_votes(
+                    row["votes"], row["used_voting_amount"]
+                ),
                 axis=1,
             )
 
@@ -320,7 +327,9 @@ class DataProcessor:
         result = []
         for token, amount in rewards:
             try:
-                decimals = tokens_df.loc[token, "decimals"] if token in tokens_df.index else 18
+                decimals = (
+                    tokens_df.loc[token, "decimals"] if token in tokens_df.index else 18
+                )
                 result.append((token, float(from_wei(amount, decimals))))
             except Exception:
                 result.append((token, float(from_wei(amount, 18))))
@@ -364,14 +373,61 @@ class DataProcessor:
         # Add priced columns if price provider is available
         if self._prices and tokens_df is not None:
             combined["bribes_usd"] = combined["bribes"].apply(
-                lambda x: self._price_rewards(x, tokens_df)
-                if isinstance(x, list) and x
-                else Decimal(0)
+                lambda x: (
+                    self._price_rewards(x, tokens_df)
+                    if isinstance(x, list) and x
+                    else Decimal(0)
+                )
             )
             combined["fees_usd"] = combined["fees"].apply(
-                lambda x: self._price_rewards(x, tokens_df)
-                if isinstance(x, list) and x
-                else Decimal(0)
+                lambda x: (
+                    self._price_rewards(x, tokens_df)
+                    if isinstance(x, list) and x
+                    else Decimal(0)
+                )
+            )
+
+            # Add bribe token prices array
+            combined["bribe_token_prices"] = combined["bribes"].apply(
+                lambda x: (
+                    self._get_reward_token_prices(x, tokens_df)
+                    if isinstance(x, list) and x
+                    else []
+                )
+            )
+
+            # Convert reserves and fees from wei and price in USD
+            combined["reserve0_usd"] = combined.apply(
+                lambda row: self._price_token_amount(
+                    row["reserve0"], row["token0"], tokens_df
+                ),
+                axis=1,
+            )
+            combined["reserve1_usd"] = combined.apply(
+                lambda row: self._price_token_amount(
+                    row["reserve1"], row["token1"], tokens_df
+                ),
+                axis=1,
+            )
+            combined["token0_fees_usd"] = combined.apply(
+                lambda row: self._price_token_amount(
+                    row["token0_fees"], row["token0"], tokens_df
+                ),
+                axis=1,
+            )
+            combined["token1_fees_usd"] = combined.apply(
+                lambda row: self._price_token_amount(
+                    row["token1_fees"], row["token1"], tokens_df
+                ),
+                axis=1,
+            )
+            combined["token0_usd"] = combined.apply(
+                lambda row: self._get_token_price(row["token0"], tokens_df),
+                axis=1,
+            )
+            combined["token1_usd"] = combined.apply(
+                lambda row: self._get_token_price(row["token1"], tokens_df),
+                axis=1,
             )
 
         return combined
@@ -392,3 +448,83 @@ class DataProcessor:
                 total += Decimal(str(amount)) * price_result.price
 
         return total
+
+    def _get_reward_token_prices(
+        self,
+        rewards: list[tuple],
+        tokens_df: pd.DataFrame,
+    ) -> list[dict]:
+        """Get array of token prices for rewards."""
+        if not rewards or not self._prices:
+            return []
+
+        prices = []
+        for token, amount in rewards:
+            price_result = self._prices.get_price_usd(token)
+            if price_result:
+                prices.append(
+                    {
+                        "token": token,
+                        "amount": float(amount),
+                        "price_usd": float(price_result.price),
+                        "value_usd": float(Decimal(str(amount)) * price_result.price),
+                    }
+                )
+            else:
+                prices.append(
+                    {
+                        "token": token,
+                        "amount": float(amount),
+                        "price_usd": None,
+                        "value_usd": None,
+                    }
+                )
+
+        return prices
+
+    def _get_token_decimals(
+        self,
+        token_address: str,
+        tokens_df: pd.DataFrame,
+    ) -> int:
+        """Get token decimals from DataFrame or default to 18."""
+        try:
+            if token_address in tokens_df.index:
+                return int(tokens_df.loc[token_address, "decimals"])
+        except Exception:
+            pass
+        return 18
+
+    def _price_token_amount(
+        self,
+        amount_wei: int,
+        token_address: str,
+        tokens_df: pd.DataFrame,
+    ) -> Decimal:
+        """Convert wei amount to USD value."""
+        if not self._prices or amount_wei == 0:
+            return Decimal(0)
+
+        decimals = self._get_token_decimals(token_address, tokens_df)
+        amount = from_wei(amount_wei, decimals)
+
+        price_result = self._prices.get_price_usd(token_address)
+        if price_result:
+            return Decimal(str(amount)) * price_result.price
+
+        return Decimal(0)
+
+    def _get_token_price(
+        self,
+        token_address: str,
+        tokens_df: pd.DataFrame,
+    ) -> Decimal | None:
+        """Get token price in USD."""
+        if not self._prices:
+            return None
+
+        price_result = self._prices.get_price_usd(token_address)
+        if price_result:
+            return price_result.price
+
+        return None

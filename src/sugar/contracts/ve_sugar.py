@@ -21,6 +21,7 @@ class VeSugar(BaseContract):
     """
 
     ABI_NAME = "ve_sugar"
+    SUGAR_TYPE = "Ve"
 
     def __init__(
         self,

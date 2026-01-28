@@ -27,6 +27,7 @@ class LpSugar(BaseContract):
     """
 
     ABI_NAME = "lp_sugar"
+    SUGAR_TYPE = "Lp"
 
     def __init__(
         self,
@@ -172,7 +173,7 @@ class LpSugar(BaseContract):
 
     def tokens_paginated(
         self,
-        limit: int = 1000,
+        limit: int = 500,
         account: str = ZERO_ADDRESS,
         connectors: tuple[str, ...] | None = None,
     ) -> list[tuple]:
@@ -180,7 +181,7 @@ class LpSugar(BaseContract):
         Fetch all token metadata with automatic pagination.
 
         Args:
-            limit: Items per page. Default 1000 to avoid RPC errors with large batches.
+            limit: Items per page. Default 500 to avoid RPC errors with large batches.
             account: Account address for balance queries.
             connectors: Connector tokens (uses instance connectors if None).
 
@@ -196,7 +197,11 @@ class LpSugar(BaseContract):
 
         while True:
             try:
-                result = self.tokens(limit, offset, account, connectors)
+                self._report_progress("tokens", offset)
+                # Call _call directly with _skip_progress to avoid double reporting
+                result = self._call(
+                    "tokens", limit, offset, account, list(connectors), _skip_progress=True
+                )
 
                 # Stop only when result is exactly the connector list length
                 # (meaning no new tokens were found beyond connectors)

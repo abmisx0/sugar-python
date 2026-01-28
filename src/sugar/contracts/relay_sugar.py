@@ -24,6 +24,7 @@ class RelaySugar(BaseContract):
     """
 
     ABI_NAME = "relay_sugar"
+    SUGAR_TYPE = "Relay"
 
     def __init__(
         self,

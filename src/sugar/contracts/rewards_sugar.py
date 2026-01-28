@@ -21,6 +21,7 @@ class RewardsSugar(BaseContract):
     """
 
     ABI_NAME = "rewards_sugar"
+    SUGAR_TYPE = "Rewards"
 
     def __init__(
         self,
@@ -79,7 +80,9 @@ class RewardsSugar(BaseContract):
 
         while True:
             try:
-                result = self.epochs_latest(limit, offset)
+                self._report_progress("epochsLatest", offset)
+                # Call _call directly with _skip_progress to avoid double reporting
+                result = self._call("epochsLatest", limit, offset, _skip_progress=True)
 
                 if result:
                     all_results.extend(result)
