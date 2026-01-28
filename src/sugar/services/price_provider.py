@@ -18,6 +18,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Batch size for oracle price queries (to avoid RPC errors)
+ORACLE_BATCH_SIZE = 15
+
 
 @dataclass
 class PriceResult:
@@ -40,17 +43,21 @@ class OraclePriceSource:
     """
     Price source using on-chain Spot Price Oracle.
 
-    Uses ETH price as intermediate to calculate USD prices.
+    Uses batch getManyRatesToEthWithCustomConnectors for efficient pricing.
+    Converts ETH prices to USD using stablecoin rates.
     """
 
     # Known stablecoin addresses per chain (for ETH/USD conversion)
     STABLECOINS = {
         # Base
-        "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": "USDC",  # Base USDC
+        "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": "USDC",  # Base USDC
         # Optimism
-        "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85": "USDC",  # OP USDC
-        "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58": "USDT",  # OP USDT
+        "0x0b2c639c533813f4aa9d7837caf62653d097ff85": "USDC",  # OP USDC
+        "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58": "USDT",  # OP USDT
     }
+
+    # WETH address (same on all OP Stack chains)
+    WETH_ADDRESS = "0x4200000000000000000000000000000000000006"
 
     def __init__(
         self,
@@ -66,41 +73,141 @@ class OraclePriceSource:
         """
         self._oracle = oracle
         self._usdc_address = usdc_address
+        # Cache for individual token prices (ETH-denominated)
+        self._eth_price_cache: dict[str, Decimal] = {}
+        # Cached ETH/USD rate
+        self._eth_usd_rate: Decimal | None = None
+        self._eth_usd_timestamp: float = 0
+        self._eth_usd_ttl = 60  # seconds
+
+    def _get_eth_usd_rate(self) -> Decimal:
+        """
+        Get the ETH/USD rate using the first connector (stablecoin).
+
+        The first connector in the list is always a stablecoin (USDC),
+        so 1 stablecoin / ETH gives us ETH price in USD terms.
+        """
+        # Check cache
+        if (
+            self._eth_usd_rate is not None
+            and time.time() - self._eth_usd_timestamp < self._eth_usd_ttl
+        ):
+            return self._eth_usd_rate
+
+        # Use the first connector (USDC) to get ETH price
+        # The rate returned is: how many USDC for 1 ETH
+        connectors = self._oracle.connectors
+        if not connectors:
+            # Fallback: assume ETH = $3000 if no connectors
+            return Decimal("3000")
+
+        stablecoin = connectors[0]  # First connector is USDC
+
+        try:
+            # Get USDC/ETH rate (how many ETH for 1 USDC)
+            rates = self._oracle.get_many_rates_to_eth(
+                src_tokens=[stablecoin],
+                use_wrappers=False,
+                threshold=10,
+            )
+            if rates and rates[0] > 0:
+                # rates[0] = how many ETH for 1 USDC
+                # So ETH/USD = 1 / rates[0]
+                self._eth_usd_rate = Decimal("1") / rates[0]
+                self._eth_usd_timestamp = time.time()
+                logger.debug(f"ETH/USD rate: {self._eth_usd_rate}")
+                return self._eth_usd_rate
+        except Exception as e:
+            logger.debug(f"Failed to get ETH/USD rate: {e}")
+
+        # Fallback
+        return Decimal("3000")
 
     def get_price_usd(self, token_address: str) -> Decimal | None:
-        """Get token price in USD via oracle."""
+        """Get token price in USD via oracle (uses cache)."""
+        token_lower = token_address.lower()
+
+        # If token is a stablecoin, return 1
+        if token_lower in self.STABLECOINS:
+            return Decimal("1.0")
+
+        # If token is WETH, return ETH/USD rate
+        if token_lower == self.WETH_ADDRESS.lower():
+            return self._get_eth_usd_rate()
+
+        # Check cache for ETH-denominated price
+        if token_lower in self._eth_price_cache:
+            eth_price = self._eth_price_cache[token_lower]
+            if eth_price > 0:
+                return eth_price * self._get_eth_usd_rate()
+            return None
+
+        # Not in cache - fetch individually (should be rare after batch prefetch)
         try:
-            # If token is a stablecoin, return 1
-            if token_address.lower() in [a.lower() for a in self.STABLECOINS]:
-                return Decimal("1.0")
-
-            # If we have a USDC address, get direct rate
-            if self._usdc_address:
-                try:
-                    rate = self._oracle.get_rate(token_address, self._usdc_address)
-                    if rate > 0:
-                        return rate
-                except Exception:
-                    pass
-
-            # Fallback: get rate to ETH and multiply by ETH/USD
-            eth_rate = self._oracle.get_rate_to_eth(token_address)
-            if eth_rate == 0:
-                return None
-
-            # Get ETH/USD price if we have USDC address
-            if self._usdc_address:
-                eth_usd = self._oracle.get_rate(
-                    "0x4200000000000000000000000000000000000006",  # WETH
-                    self._usdc_address,
-                )
-                return eth_rate * eth_usd
-
-            return eth_rate  # Return ETH-denominated if no USD conversion
-
+            rates = self._oracle.get_many_rates_to_eth(
+                src_tokens=[token_address],
+                use_wrappers=False,
+                threshold=10,
+            )
+            if rates and rates[0] > 0:
+                self._eth_price_cache[token_lower] = rates[0]
+                return rates[0] * self._get_eth_usd_rate()
         except Exception as e:
             logger.debug(f"Oracle price fetch failed for {token_address}: {e}")
-            return None
+
+        return None
+
+    def prefetch_prices(self, token_addresses: list[str]) -> None:
+        """
+        Batch prefetch prices for multiple tokens.
+
+        Uses getManyRatesToEthWithCustomConnectors with batches of 15 tokens.
+        Results are cached for subsequent get_price_usd calls.
+
+        Args:
+            token_addresses: List of token addresses to prefetch.
+        """
+        # Filter out already cached tokens and stablecoins
+        tokens_to_fetch = []
+        for addr in token_addresses:
+            addr_lower = addr.lower()
+            if addr_lower in self._eth_price_cache:
+                continue
+            if addr_lower in self.STABLECOINS:
+                continue
+            if addr_lower == self.WETH_ADDRESS.lower():
+                continue
+            tokens_to_fetch.append(addr)
+
+        if not tokens_to_fetch:
+            return
+
+        # Fetch ETH/USD rate first (will be needed for all conversions)
+        self._get_eth_usd_rate()
+
+        # Batch fetch in groups of ORACLE_BATCH_SIZE
+        for i in range(0, len(tokens_to_fetch), ORACLE_BATCH_SIZE):
+            batch = tokens_to_fetch[i : i + ORACLE_BATCH_SIZE]
+            try:
+                rates = self._oracle.get_many_rates_to_eth(
+                    src_tokens=batch,
+                    use_wrappers=False,
+                    threshold=10,
+                )
+                # Cache the results
+                for j, addr in enumerate(batch):
+                    if j < len(rates):
+                        self._eth_price_cache[addr.lower()] = rates[j]
+            except Exception as e:
+                logger.warning(f"Batch price fetch failed for {len(batch)} tokens: {e}")
+                # Cache zeros for failed tokens so we don't retry
+                for addr in batch:
+                    self._eth_price_cache[addr.lower()] = Decimal(0)
+
+    def clear_cache(self) -> None:
+        """Clear the price cache."""
+        self._eth_price_cache.clear()
+        self._eth_usd_rate = None
 
 
 class CoinGeckoPriceSource:
@@ -241,7 +348,7 @@ class PriceProvider:
     Composite price provider with fallback chain.
 
     Priority:
-    1. On-chain Spot Price Oracle
+    1. On-chain Spot Price Oracle (with batch prefetching)
     2. CoinGecko API
     3. DefiLlama API
     """
@@ -265,6 +372,19 @@ class PriceProvider:
         self._defillama = defillama
         self._cache: dict[str, PriceResult] = {}
         self._cache_ttl = 60  # seconds
+
+    def prefetch_prices(self, token_addresses: list[str]) -> None:
+        """
+        Batch prefetch prices for multiple tokens.
+
+        This should be called before processing pools to minimize RPC calls.
+        Only the oracle source supports batch prefetching.
+
+        Args:
+            token_addresses: List of token addresses to prefetch.
+        """
+        if self._oracle:
+            self._oracle.prefetch_prices(token_addresses)
 
     def get_price_usd(
         self,
@@ -352,8 +472,11 @@ class PriceProvider:
         Returns:
             Dictionary mapping addresses to PriceResults.
         """
-        results: dict[str, PriceResult | None] = {}
+        # Prefetch all tokens first
+        self.prefetch_prices(token_addresses)
 
+        # Then get individual prices (will use cache)
+        results: dict[str, PriceResult | None] = {}
         for address in token_addresses:
             results[address] = self.get_price_usd(address)
 
@@ -362,3 +485,5 @@ class PriceProvider:
     def clear_cache(self) -> None:
         """Clear the price cache."""
         self._cache.clear()
+        if self._oracle:
+            self._oracle.clear_cache()

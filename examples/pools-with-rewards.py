@@ -113,5 +113,6 @@ def get_pools_with_rewards(chain: ChainId | str, only_with_rewards: bool = True)
 
 
 if __name__ == "__main__":
+    # By default, only pools with rewards are included
     # Set only_with_rewards=False to include all pools
-    get_pools_with_rewards(ChainId.BASE, only_with_rewards=True)
+    get_pools_with_rewards(ChainId.BASE)

@@ -21,38 +21,76 @@ from sugar.services.price_provider import (
 class TestOraclePriceSource:
     """Test on-chain oracle price source."""
 
-    def test_get_price_usd(self) -> None:
-        """Should get price from oracle."""
+    def test_get_price_usd_stablecoin(self) -> None:
+        """Should return 1 for stablecoins."""
         mock_oracle = MagicMock()
-        # Oracle returns rate as Decimal
-        mock_oracle.get_rate.return_value = Decimal("2000")
+        mock_oracle.connectors = ("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",)
 
         source = OraclePriceSource(mock_oracle, "0xusdc")
-        price = source.get_price_usd("0xweth")
+        # Use Base USDC address
+        price = source.get_price_usd("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913")
+
+        assert price == Decimal("1.0")
+
+    def test_get_price_usd_weth(self) -> None:
+        """Should return ETH/USD rate for WETH."""
+        mock_oracle = MagicMock()
+        mock_oracle.connectors = ("0xusdc",)
+        # USDC/ETH rate = 0.0005 means 1 USDC = 0.0005 ETH, so ETH = $2000
+        mock_oracle.get_many_rates_to_eth.return_value = [Decimal("0.0005")]
+
+        source = OraclePriceSource(mock_oracle, "0xusdc")
+        # Use standard WETH address
+        price = source.get_price_usd("0x4200000000000000000000000000000000000006")
 
         assert price == Decimal("2000")
 
-    def test_get_price_usd_no_usdc(self) -> None:
-        """Should fallback to ETH rate when no USDC address configured."""
+    def test_get_price_usd_regular_token(self) -> None:
+        """Should get price for regular token via batch API."""
         mock_oracle = MagicMock()
-        mock_oracle.get_rate_to_eth.return_value = Decimal("1")
+        mock_oracle.connectors = ("0xusdc",)
+        # First call: Token/ETH rate (when get_price_usd is called)
+        # Second call: USDC/ETH rate for ETH price (when _get_eth_usd_rate is called)
+        mock_oracle.get_many_rates_to_eth.side_effect = [
+            [Decimal("0.5")],  # 1 token = 0.5 ETH
+            [Decimal("0.0005")],  # 1 USDC = 0.0005 ETH, so ETH = $2000
+        ]
 
-        source = OraclePriceSource(mock_oracle, None)
-        price = source.get_price_usd("0xweth")
+        source = OraclePriceSource(mock_oracle, "0xusdc")
+        price = source.get_price_usd("0xsometoken")
 
-        # Returns ETH-denominated rate
-        assert price == Decimal("1")
+        # Price should be: 0.5 ETH * $2000/ETH = $1000
+        assert price == Decimal("1000")
 
     def test_get_price_usd_oracle_error(self) -> None:
         """Should return None on oracle error."""
         mock_oracle = MagicMock()
-        mock_oracle.get_rate.side_effect = Exception("Oracle error")
-        mock_oracle.get_rate_to_eth.side_effect = Exception("Oracle error")
+        mock_oracle.connectors = ("0xusdc",)
+        mock_oracle.get_many_rates_to_eth.side_effect = Exception("Oracle error")
 
         source = OraclePriceSource(mock_oracle, "0xusdc")
         price = source.get_price_usd("0xweth")
 
         assert price is None
+
+    def test_prefetch_prices(self) -> None:
+        """Should batch fetch prices efficiently."""
+        mock_oracle = MagicMock()
+        mock_oracle.connectors = ("0xusdc",)
+        # ETH price fetch, then batch fetch
+        mock_oracle.get_many_rates_to_eth.side_effect = [
+            [Decimal("0.0005")],  # ETH price
+            [Decimal("0.5"), Decimal("0.25"), Decimal("0.1")],  # 3 token prices
+        ]
+
+        source = OraclePriceSource(mock_oracle, "0xusdc")
+        source.prefetch_prices(["0xtoken1", "0xtoken2", "0xtoken3"])
+
+        # Should have made 2 calls: one for ETH price, one for batch
+        assert mock_oracle.get_many_rates_to_eth.call_count == 2
+
+        # Prices should be cached
+        assert len(source._eth_price_cache) == 3
 
 
 class TestCoinGeckoPriceSource:
@@ -269,3 +307,13 @@ class TestPriceProvider:
         assert results["0xweth"].price == Decimal("2000")
         assert results["0xusdc"] is not None
         assert results["0xusdc"].price == Decimal("1")
+
+    def test_prefetch_prices(self) -> None:
+        """Should call oracle prefetch."""
+        mock_oracle = MagicMock()
+        mock_oracle.prefetch_prices = MagicMock()
+
+        provider = PriceProvider(oracle=mock_oracle)
+        provider.prefetch_prices(["0xtoken1", "0xtoken2"])
+
+        mock_oracle.prefetch_prices.assert_called_once_with(["0xtoken1", "0xtoken2"])

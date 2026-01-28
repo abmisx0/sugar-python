@@ -6,6 +6,8 @@ import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from web3 import Web3
+
 from sugar.contracts.base import BaseContract
 
 if TYPE_CHECKING:
@@ -88,7 +90,9 @@ class SpotPriceOracle(BaseContract):
         Returns:
             Exchange rate as Decimal.
         """
-        rate = self._call("getRateWithThreshold", src_token, dst_token, use_wrappers, threshold)
+        rate = self._call(
+            "getRateWithThreshold", src_token, dst_token, use_wrappers, threshold
+        )
         return Decimal(rate) / Decimal(10**18)
 
     def get_rate_to_eth(
@@ -126,7 +130,9 @@ class SpotPriceOracle(BaseContract):
         Returns:
             Exchange rate as Decimal.
         """
-        rate = self._call("getRateToEthWithThreshold", src_token, use_wrappers, threshold)
+        rate = self._call(
+            "getRateToEthWithThreshold", src_token, use_wrappers, threshold
+        )
         return Decimal(rate) / Decimal(10**18)
 
     def get_rate_to_eth_with_connectors(
@@ -182,11 +188,15 @@ class SpotPriceOracle(BaseContract):
         if custom_connectors is None:
             custom_connectors = self._connectors
 
+        # Ensure all addresses are checksummed
+        checksummed_tokens = [Web3.to_checksum_address(t) for t in src_tokens]
+        checksummed_connectors = [Web3.to_checksum_address(c) for c in custom_connectors]
+
         rates = self._call(
             "getManyRatesToEthWithCustomConnectors",
-            src_tokens,
+            checksummed_tokens,
             use_wrappers,
-            list(custom_connectors),
+            checksummed_connectors,
             threshold,
         )
         return [Decimal(r) / Decimal(10**18) for r in rates]

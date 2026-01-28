@@ -372,6 +372,14 @@ class DataProcessor:
 
         # Add priced columns if price provider is available
         if self._prices and tokens_df is not None:
+            # Pre-collect all unique tokens that need pricing
+            unique_tokens = self._collect_unique_tokens(combined, tokens_df)
+            logger.debug(f"Prefetching prices for {len(unique_tokens)} unique tokens")
+
+            # Batch prefetch all prices at once (uses batched RPC calls)
+            self._prices.prefetch_prices(unique_tokens)
+
+            # Now apply pricing (will use cached prices)
             combined["bribes_usd"] = combined["bribes"].apply(
                 lambda x: (
                     self._price_rewards(x, tokens_df)
@@ -431,6 +439,45 @@ class DataProcessor:
             )
 
         return combined
+
+    def _collect_unique_tokens(
+        self,
+        combined_df: pd.DataFrame,
+        tokens_df: pd.DataFrame,
+    ) -> list[str]:
+        """
+        Collect all unique token addresses that need pricing.
+
+        Args:
+            combined_df: Combined LP + rewards DataFrame.
+            tokens_df: Token metadata DataFrame.
+
+        Returns:
+            List of unique token addresses.
+        """
+        unique_tokens: set[str] = set()
+
+        # Collect token0 and token1 from all pools
+        if "token0" in combined_df.columns:
+            unique_tokens.update(combined_df["token0"].dropna().unique())
+        if "token1" in combined_df.columns:
+            unique_tokens.update(combined_df["token1"].dropna().unique())
+
+        # Collect tokens from bribes
+        if "bribes" in combined_df.columns:
+            for bribes in combined_df["bribes"].dropna():
+                if isinstance(bribes, list):
+                    for token, _ in bribes:
+                        unique_tokens.add(token)
+
+        # Collect tokens from fees
+        if "fees" in combined_df.columns:
+            for fees in combined_df["fees"].dropna():
+                if isinstance(fees, list):
+                    for token, _ in fees:
+                        unique_tokens.add(token)
+
+        return list(unique_tokens)
 
     def _price_rewards(
         self,
