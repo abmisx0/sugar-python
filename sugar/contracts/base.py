@@ -208,6 +208,11 @@ class BaseContract:
         all_results: list[tuple] = []
         offset = start_id
         current_limit = limit
+        consecutive_failures = 0
+        # Bound to avoid an unbounded loop when the RPC is persistently failing:
+        # scattered bad IDs reset this on the next success, but a dead endpoint
+        # would otherwise climb IDs forever.
+        max_consecutive_failures = 25
 
         while True:
             try:
@@ -215,6 +220,7 @@ class BaseContract:
                 # Call contract directly instead of through _call to avoid double reporting
                 func = getattr(self._contract.functions, method)
                 result = func(current_limit, offset).call()
+                consecutive_failures = 0
 
                 if not result:
                     break
@@ -229,7 +235,16 @@ class BaseContract:
                 logger.debug(f"{method}: fetched {len(result)} items, next ID {offset}")
 
             except Exception as e:
+                consecutive_failures += 1
                 logger.error(f"RPC ERROR: {method}(id={offset}): {_clean_rpc_error(e)}")
+                if consecutive_failures >= max_consecutive_failures:
+                    from sugar.core.exceptions import PaginationError
+
+                    raise PaginationError(
+                        method,
+                        offset,
+                        f"aborted after {consecutive_failures} consecutive failures",
+                    ) from e
                 # Reduce limit or skip ID on error
                 if current_limit > 1:
                     current_limit = max(1, current_limit // 2)

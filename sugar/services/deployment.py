@@ -320,7 +320,9 @@ def fetch_abi_from_etherscan(
             return None
 
     except Exception as e:
-        logger.warning(f"Error fetching ABI from Etherscan: {e}")
+        # Do not log the exception directly: HTTP errors embed the request URL,
+        # which carries the apikey query parameter.
+        logger.warning(f"Error fetching ABI from Etherscan for {address}: {type(e).__name__}")
         return None
 
 

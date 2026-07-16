@@ -146,6 +146,29 @@ class TestVeSugar:
 
     @patch("sugar.contracts.base.load_abi")
     @patch("sugar.contracts.base.Web3.to_checksum_address")
+    def test_all_paginated_aborts_on_persistent_rpc_failure(
+        self, mock_checksum: MagicMock, mock_load_abi: MagicMock
+    ) -> None:
+        """_paginate_by_id must not loop forever when every call fails."""
+        import pytest
+
+        from sugar.contracts.ve_sugar import VeSugar
+        from sugar.core.exceptions import PaginationError
+
+        mock_checksum.return_value = "0xcontract"
+        mock_load_abi.return_value = []
+
+        mock_provider = MagicMock()
+        mock_contract = MagicMock()
+        mock_provider.web3.eth.contract.return_value = mock_contract
+        mock_contract.functions.all.return_value.call.side_effect = Exception("RPC down")
+
+        ve = VeSugar(mock_provider, "0xcontract")
+        with pytest.raises(PaginationError):
+            ve.all_paginated()
+
+    @patch("sugar.contracts.base.load_abi")
+    @patch("sugar.contracts.base.Web3.to_checksum_address")
     def test_by_id(
         self, mock_checksum: MagicMock, mock_load_abi: MagicMock
     ) -> None:

@@ -150,7 +150,18 @@ class SnapshotStore:
     def _read_manifest(self, manifest: Path) -> pd.DataFrame:
         if not manifest.exists():
             return pd.DataFrame(columns=["block", "fetched_at", "rows", "file"])
-        records = [json.loads(line) for line in manifest.read_text().splitlines() if line.strip()]
+        records = []
+        for line in manifest.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                # Tolerate a torn/partial line (e.g. from a crash mid-append)
+                # rather than making the whole dataset unreadable.
+                logger.warning(f"Skipping corrupt manifest line in {manifest}")
+        if not records:
+            return pd.DataFrame(columns=["block", "fetched_at", "rows", "file"])
         return pd.DataFrame(records)
 
     def history(self, dataset: str, chain: str) -> pd.DataFrame:

@@ -453,8 +453,11 @@ class CoinGeckoPriceSource:
             data = response.json()
             if token_address.lower() in data:
                 price = Decimal(str(data[token_address.lower()]["usd"]))
-                self._cache[cache_key] = (price, time.time())
-                return price
+                # Treat 0 as "no price" so the provider falls through to the
+                # next source instead of caching a bogus $0 valuation.
+                if price > 0:
+                    self._cache[cache_key] = (price, time.time())
+                    return price
 
             return None
 
@@ -522,8 +525,9 @@ class DefiLlamaPriceSource:
 
             if coin_id in coins:
                 price = Decimal(str(coins[coin_id]["price"]))
-                self._cache[cache_key] = (price, time.time())
-                return price
+                if price > 0:
+                    self._cache[cache_key] = (price, time.time())
+                    return price
 
             return None
 
@@ -558,7 +562,8 @@ class DefiLlamaPriceSource:
             data = response.json()
             coins = data.get("coins", {})
             if coin_id in coins:
-                return Decimal(str(coins[coin_id]["price"]))
+                price = Decimal(str(coins[coin_id]["price"]))
+                return price if price > 0 else None
             return None
         except Exception as e:
             logger.debug(

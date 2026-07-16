@@ -60,9 +60,11 @@ class Web3Provider:
         web3 = Web3(Web3.HTTPProvider(rpc_url))
 
         if not web3.is_connected():
+            # Never include rpc_url in the message: it may carry an API key.
+            source = "injected rpc_url" if self._rpc_url else f"env {self._config.rpc_env_var}"
             raise RpcConnectionError(
                 self._config.name,
-                f"Failed to connect to RPC at {rpc_url}",
+                f"Failed to connect to RPC endpoint (from {source})",
             )
 
         logger.info(f"Connected to {self._config.name} (chain ID: {self._config.chain_id.value})")

@@ -26,11 +26,18 @@ def setup_logging(
     if format_string is None:
         format_string = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
+    # Idempotent: clear any handlers we added on a previous call so repeated
+    # calls (e.g. importing multiple example modules, or notebooks) don't
+    # produce duplicated log lines.
+    for existing in list(logger.handlers):
+        logger.removeHandler(existing)
+
     handler = logging.StreamHandler(stream or sys.stderr)
     handler.setFormatter(logging.Formatter(format_string))
 
     logger.addHandler(handler)
     logger.setLevel(level)
+    logger.propagate = False
 
     return logger
 
