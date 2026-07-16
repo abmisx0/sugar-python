@@ -64,6 +64,20 @@ class Token:
     price_usd: Decimal | None = None
     price_source: str | None = None
 
+    @classmethod
+    def from_tuple(cls, t: tuple) -> Token:
+        """Build from a raw LpSugar.tokens() row.
+
+        Layout: (token_address, symbol, decimals, account_balance, listed, emerging).
+        """
+        return cls(
+            address=t[0],
+            symbol=t[1],
+            decimals=int(t[2]),
+            listed=bool(t[4]),
+            account_balance_raw=int(t[3]),
+        )
+
 
 @dataclass(slots=True)
 class VeNFT:
@@ -93,6 +107,33 @@ class VeNFT:
         """True when this veNFT is deposited into a Relay/managed veNFT."""
         return self.managed_id != 0
 
+    @classmethod
+    def from_tuple(cls, t: tuple) -> VeNFT:
+        """Build from a raw VeSugar.all()/byId() row.
+
+        Layout: (id, account, decimals, amount, voting_amount, governance_amount,
+        rebase_amount, expires_at, voted_at, votes, token, permanent, delegate_id,
+        managed_id). Balances are scaled by ``decimals``.
+        """
+        decimals = int(t[2])
+        scale = Decimal(10) ** decimals
+        return cls(
+            id=int(t[0]),
+            account=t[1],
+            decimals=decimals,
+            amount=Decimal(t[3]) / scale,
+            amount_raw=int(t[3]),
+            voting_amount=Decimal(t[4]) / scale,
+            governance_amount=Decimal(t[5]) / scale,
+            rebase_amount=Decimal(t[6]) / scale,
+            expires_at=int(t[7]),
+            voted_at=int(t[8]),
+            token=t[10],
+            permanent=bool(t[11]),
+            delegate_id=int(t[12]),
+            managed_id=int(t[13]),
+        )
+
 
 @dataclass(slots=True)
 class Relay:
@@ -118,6 +159,34 @@ class Relay:
     inactive: bool
     managers: list[str] = field(default_factory=list)
     account_venfts: list[int] = field(default_factory=list)
+
+    @classmethod
+    def from_tuple(cls, t: tuple) -> Relay:
+        """Build from a raw RelaySugar.all() row.
+
+        Layout: (venft_id, decimals, amount, voting_amount, used_voting_amount,
+        voted_at, votes, token, compounded, withdrawable, run_at, managers, relay,
+        compounder, inactive, name, account_venfts). Balances scaled by ``decimals``.
+        """
+        decimals = int(t[1])
+        scale = Decimal(10) ** decimals
+        return cls(
+            venft_id=int(t[0]),
+            decimals=decimals,
+            amount=Decimal(t[2]) / scale,
+            amount_raw=int(t[2]),
+            voting_amount=Decimal(t[3]) / scale,
+            used_voting_amount=Decimal(t[4]) / scale,
+            token=t[7],
+            compounded=Decimal(t[8]) / scale,
+            withdrawable=bool(t[9]),
+            name=t[15],
+            relay=t[12],
+            compounder=bool(t[13]),
+            inactive=bool(t[14]),
+            managers=list(t[11]),
+            account_venfts=list(t[16]),
+        )
 
 
 @dataclass(slots=True)

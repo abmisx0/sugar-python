@@ -8,10 +8,47 @@ from decimal import Decimal
 from sugar.models import (
     AccountPosition,
     PositionKind,
+    Relay,
+    Token,
     TokenAmount,
     VeNFT,
     to_dict,
 )
+
+
+class TestFromTuple:
+    def test_token_from_tuple(self) -> None:
+        # (address, symbol, decimals, account_balance, listed, emerging)
+        tok = Token.from_tuple(("0xAbC", "AERO", 18, 5 * 10**18, True, False))
+        assert tok.address == "0xAbC"
+        assert tok.symbol == "AERO"
+        assert tok.decimals == 18
+        assert tok.listed is True
+        assert tok.account_balance_raw == 5 * 10**18
+
+    def test_venft_from_tuple_scales_by_decimals(self) -> None:
+        row = (7, "0xacc", 18, 3 * 10**18, 2 * 10**18, 1 * 10**18, 0,
+               123, 0, [], "0xtok", False, 0, 9)
+        ve = VeNFT.from_tuple(row)
+        assert ve.id == 7
+        assert ve.amount == Decimal("3")
+        assert ve.amount_raw == 3 * 10**18
+        assert ve.voting_amount == Decimal("2")
+        assert ve.governance_amount == Decimal("1")
+        assert ve.expires_at == 123
+        assert ve.managed_id == 9 and ve.in_relay is True
+
+    def test_relay_from_tuple(self) -> None:
+        row = (1, 18, 100 * 10**18, 90 * 10**18, 10 * 10**18, 0, [], "0xtok",
+               4 * 10**18, True, 0, ["0xmgr"], "0xrelay", True, False, "Relay X", [11, 12])
+        r = Relay.from_tuple(row)
+        assert r.venft_id == 1
+        assert r.amount == Decimal("100")
+        assert r.voting_amount == Decimal("90")
+        assert r.used_voting_amount == Decimal("10")
+        assert r.name == "Relay X"
+        assert r.compounder is True and r.inactive is False
+        assert r.managers == ["0xmgr"] and r.account_venfts == [11, 12]
 
 
 class TestTokenAmount:
