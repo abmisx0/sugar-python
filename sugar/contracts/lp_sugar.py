@@ -248,14 +248,27 @@ class LpSugar(BaseContract):
         """
         Fetch all positions for an account with automatic pagination.
 
+        ``positions(limit, offset, account)`` paginates over the *pool* space:
+        ``offset`` skips pools and it returns the account's positions found in
+        ``pools[offset : offset + limit]``. Pages are therefore frequently empty
+        (an account holds positions in only a few of thousands of pools), so we
+        must scan the full pool range rather than stop at the first empty page.
+
         Args:
             account: Account address.
-            limit: Items per page.
+            limit: Pools scanned per call.
 
         Returns:
-            List of all position data tuples.
+            List of all position data tuples for the account.
         """
-        return self._paginate("positions", limit, extra_args=(account,))
+        total = self.count()
+        results: list[tuple] = []
+        offset = 0
+        while offset < total:
+            page = self.positions(account, limit=limit, offset=offset)
+            results.extend(page)
+            offset += limit
+        return results
 
     def positions_unstaked_concentrated(
         self,

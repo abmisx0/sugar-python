@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -35,6 +36,25 @@ def set_progress_callback(
 def get_progress_callback() -> Callable[[str, str, str, int | None], None] | None:
     """Get the current progress callback."""
     return _progress_callback
+
+
+_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+
+
+def _checksum_addresses(value: Any) -> Any:
+    """Checksum any address-shaped string argument.
+
+    web3.py rejects mixed/lower-case addresses; Sugar callers routinely pass
+    lower-case account/token addresses, so normalize them (recursively for the
+    connector lists) before encoding the call.
+    """
+    if isinstance(value, str) and _ADDRESS_RE.match(value):
+        return Web3.to_checksum_address(value)
+    if isinstance(value, list):
+        return [_checksum_addresses(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_checksum_addresses(v) for v in value)
+    return value
 
 
 def _clean_rpc_error(exc: Exception) -> str:
@@ -133,6 +153,7 @@ class BaseContract:
         if not _skip_progress:
             self._report_progress(method)
         func = getattr(self._contract.functions, method)
+        args = tuple(_checksum_addresses(a) for a in args)
         try:
             result = func(*args).call()
         except Exception as e:
@@ -161,6 +182,7 @@ class BaseContract:
         """
         all_results: list[tuple] = []
         offset = start_offset
+        extra_args = tuple(_checksum_addresses(a) for a in extra_args)
 
         while True:
             try:

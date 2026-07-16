@@ -54,6 +54,31 @@ class TestLpSugar:
 
     @patch("sugar.contracts.base.load_abi")
     @patch("sugar.contracts.base.Web3.to_checksum_address")
+    def test_positions_paginated_scans_past_empty_pages(
+        self, mock_checksum: MagicMock, mock_load_abi: MagicMock
+    ) -> None:
+        """positions() paginates over pool space, so early empty pages must not
+        stop the scan — the position lives in a later page."""
+        from sugar.contracts.lp_sugar import LpSugar
+
+        mock_checksum.return_value = "0xcontract"
+        mock_load_abi.return_value = []
+
+        mock_provider = MagicMock()
+        mock_contract = MagicMock()
+        mock_provider.web3.eth.contract.return_value = mock_contract
+        # 300 pools -> 3 pages at limit=100; the position is only in page 2.
+        mock_contract.functions.count.return_value.call.return_value = 300
+        the_pos = (42, "0xlp")
+        mock_contract.functions.positions.return_value.call.side_effect = [[], [the_pos], []]
+
+        lp = LpSugar(mock_provider, "0xcontract", ())
+        result = lp.positions_paginated("0xaccount", limit=100)
+
+        assert result == [the_pos]  # found despite the first page being empty
+
+    @patch("sugar.contracts.base.load_abi")
+    @patch("sugar.contracts.base.Web3.to_checksum_address")
     def test_by_index(
         self, mock_checksum: MagicMock, mock_load_abi: MagicMock
     ) -> None:
