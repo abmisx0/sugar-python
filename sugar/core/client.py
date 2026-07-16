@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,7 @@ from sugar.contracts.rewards_sugar import RewardsSugar
 from sugar.contracts.ve_sugar import VeSugar
 from sugar.core.exceptions import ContractNotAvailableError
 from sugar.core.web3_provider import Web3Provider
+from sugar.models import AccountPosition, PositionKind, TokenAmount, VeNFT
 from sugar.services.data_processor import DataProcessor
 from sugar.services.export import ExportService
 from sugar.services.price_provider import (
@@ -225,19 +227,19 @@ class SugarClient:
                     self._config.connectors,
                 )
 
-            # Get USDC address from connectors if available
-            usdc_address = None
-            for connector in self._config.connectors:
-                # Common USDC addresses
-                if connector.lower() in [
-                    "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",  # Base USDC
-                    "0x0b2c639c533813f4aa9d7837caf62653d097ff85",  # OP USDC
-                ]:
-                    usdc_address = connector
-                    break
+            # By Sugar convention the first connector is the chain's stablecoin
+            # (USDC), used for USD conversion.
+            usdc_address = self._config.connectors[0] if self._config.connectors else None
 
+            # Pass any already-cached token metadata so the oracle can adjust
+            # rates for non-18-decimal tokens (e.g. 6-decimal USDC/USDT) on ANY
+            # chain. If tokens haven't been fetched yet, get_tokens() will push
+            # them in later (see below) — avoiding a prices<->get_tokens cycle.
             oracle_source = OraclePriceSource(
-                self._price_oracle, usdc_address, chain_id=self._config.chain_id.value
+                self._price_oracle,
+                usdc_address,
+                tokens_df=self._tokens_df,
+                chain_id=self._config.chain_id.value,
             )
 
         # Create CoinGecko source
@@ -282,6 +284,11 @@ class SugarClient:
             raw_data = self._lp.tokens_paginated()
             self._tokens_df = self.processor.process_tokens(raw_data, listed_only=False)
             self._record_snapshot(self._tokens_df, "tokens")
+            # Give the oracle token decimals so it can price non-18-decimal
+            # tokens correctly. Only if a provider already exists — creating one
+            # here would recurse (prices -> get_tokens -> processor -> prices).
+            if self._price_provider is not None:
+                self._price_provider.set_tokens_df(self._tokens_df)
 
         result = self._tokens_df[self._tokens_df["listed"]] if listed_only else self._tokens_df
         return result if df else self._records(result)
@@ -409,6 +416,170 @@ class SugarClient:
         )
         self._record_snapshot(result, "pools_with_rewards")
         return result if df else self._records(result)
+
+    def _token_amount(
+        self,
+        address: str,
+        raw: int,
+        decimals: int,
+        symbol: str | None = None,
+        price: bool = True,
+    ) -> TokenAmount:
+        """Build a priced TokenAmount from a raw on-chain integer."""
+        amount = Decimal(raw) / (Decimal(10) ** decimals)
+        price_usd = None
+        price_source = None
+        if price and raw != 0:
+            try:
+                result = self.prices.get_price_usd(address)
+                if result is not None:
+                    price_usd = result.price
+                    price_source = result.source
+            except Exception as exc:  # pricing must never break aggregation
+                logger.debug(f"price lookup failed for {address}: {exc}")
+        return TokenAmount(
+            address=address,
+            symbol=symbol or "?",
+            decimals=decimals,
+            amount=amount,
+            amount_raw=raw,
+            price_usd=price_usd,
+            price_source=price_source,
+        )
+
+    def _token_meta(self) -> dict[str, tuple[str, int]]:
+        """Map lower-cased token address -> (symbol, decimals)."""
+        df = self.get_tokens(listed_only=False, df=True)
+        return {
+            str(addr).lower(): (row["symbol"], int(row["decimals"]))
+            for addr, row in df.iterrows()
+        }
+
+    def positions_by_account(
+        self, account: str, price: bool = True
+    ) -> list[AccountPosition]:
+        """
+        Return an account's entire footprint on this chain as typed positions.
+
+        Stitches veNFT locks (resolving Relay/managed-veNFT principal), and LP /
+        concentrated-liquidity positions into one normalized, mergeable list.
+        Every token carries a raw + human amount and, when ``price=True``, a USD
+        price with its source.
+
+        Args:
+            account: Wallet address (any case).
+            price: Whether to attach USD prices.
+
+        Returns:
+            List of AccountPosition. Use ``sugar.to_dict`` for plain dicts.
+        """
+        protocol = "aerodrome" if self._config.chain_id == ChainId.BASE else "velodrome"
+        chain = self.chain_name
+        chain_id = self._config.chain_id.value
+        out: list[AccountPosition] = []
+        meta = self._token_meta()  # cached token symbol/decimals lookup
+
+        # --- veNFT locks (with Relay/managed-veNFT resolution) ---
+        if self.has_ve():
+            venfts = [VeNFT.from_tuple(v) for v in self.ve.by_account(account)]
+            # For relay-deposited veNFTs, the exact principal + rewards live in
+            # RelaySugar.account_venfts (ve.by_account reports amount=0).
+            relay_map: dict[int, tuple[int, int]] = {}
+            if self.has_relay() and any(v.managed_id != 0 for v in venfts):
+                for r in self.relay.all(account):
+                    for entry in r[16]:  # account_venfts: (venft_id, amount, rewards)
+                        relay_map[int(entry[0])] = (int(entry[1]), int(entry[2]))
+
+            for ve in venfts:
+                if ve.managed_id != 0 and ve.id in relay_map:
+                    principal_raw, reward_raw = relay_map[ve.id]
+                    kind = PositionKind.RELAY
+                else:
+                    principal_raw = ve.amount_raw
+                    reward_raw = int(ve.rebase_amount * (Decimal(10) ** ve.decimals))
+                    kind = PositionKind.VE
+                if principal_raw == 0 and reward_raw == 0:
+                    continue
+                sym, _ = meta.get(ve.token.lower(), ("?", ve.decimals))
+                lock = self._token_amount(
+                    ve.token, principal_raw, ve.decimals, symbol=sym, price=price
+                )
+                rewards = (
+                    [self._token_amount(ve.token, reward_raw, ve.decimals, symbol=sym, price=price)]
+                    if reward_raw
+                    else []
+                )
+                out.append(
+                    AccountPosition(
+                        protocol=protocol,
+                        chain=chain,
+                        chain_id=chain_id,
+                        kind=kind,
+                        tokens=[lock],
+                        rewards=rewards,
+                        locked=True,
+                        usd_value=(lock.usd or Decimal(0)),
+                        meta={
+                            "venft_id": ve.id,
+                            "expires_at": ve.expires_at,
+                            "managed_id": ve.managed_id,
+                        },
+                    )
+                )
+
+        # --- LP / concentrated-liquidity positions ---
+        lp_positions = self.lp.positions_paginated(account)
+        if lp_positions:
+            # Map pool address -> token0/token1/type/emissions_token via get_pools
+            # (byAddress reverts for some CL pools, so use the full pool set).
+            pools_df = self.get_pools(df=True).reset_index()
+            pool_map = {
+                str(row["lp"]).lower(): row for _, row in pools_df.iterrows()
+            }
+            for p in lp_positions:
+                pool_addr = p[1]
+                pool = pool_map.get(pool_addr.lower())
+                if pool is None:
+                    continue
+                t0, t1 = pool["token0"], pool["token1"]
+                pool_type = pool["type"]
+                emissions_token = pool["emissions_token"]
+                s0, d0 = meta.get(t0.lower(), ("?", 18))
+                s1, d1 = meta.get(t1.lower(), ("?", 18))
+                se, de = meta.get(emissions_token.lower(), ("?", 18))
+
+                tok0 = self._token_amount(t0, int(p[4]), d0, symbol=s0, price=price)
+                tok1 = self._token_amount(t1, int(p[5]), d1, symbol=s1, price=price)
+
+                rewards: list[TokenAmount] = []
+                if p[8]:
+                    rewards.append(self._token_amount(t0, int(p[8]), d0, symbol=s0, price=price))
+                if p[9]:
+                    rewards.append(self._token_amount(t1, int(p[9]), d1, symbol=s1, price=price))
+                if p[10]:
+                    rewards.append(
+                        self._token_amount(
+                            emissions_token, int(p[10]), de, symbol=se, price=price
+                        )
+                    )
+
+                usd = (tok0.usd or Decimal(0)) + (tok1.usd or Decimal(0))
+                out.append(
+                    AccountPosition(
+                        protocol=protocol,
+                        chain=chain,
+                        chain_id=chain_id,
+                        kind=PositionKind.CL if pool_type > 0 else PositionKind.LP,
+                        tokens=[tok0, tok1],
+                        rewards=rewards,
+                        pool=pool_addr,
+                        usd_value=usd,
+                        locked=False,
+                        meta={"position_id": int(p[0]), "pool_type": int(pool_type)},
+                    )
+                )
+
+        return out
 
     @property
     def snapshots(self) -> SnapshotStore | None:

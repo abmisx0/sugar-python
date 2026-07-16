@@ -151,6 +151,7 @@ class OraclePriceSource:
         self._oracle = oracle
         self._usdc_address = usdc_address
         self._tokens_df = tokens_df
+        self._decimals_by_addr: dict[str, int] | None = None
         self._chain_id = chain_id
         # Cache for individual token prices (ETH-denominated)
         self._eth_price_cache: dict[str, Decimal] = {}
@@ -250,12 +251,16 @@ class OraclePriceSource:
         if addr_lower in self.KNOWN_DECIMALS:
             return self.KNOWN_DECIMALS[addr_lower]
 
-        # Check tokens DataFrame if available
-        if self._tokens_df is not None and token_address in self._tokens_df.index:
-            try:
-                return int(self._tokens_df.loc[token_address, "decimals"])
-            except (KeyError, ValueError):
-                pass
+        # Check tokens DataFrame if available (case-insensitive; the index case
+        # from get_tokens may differ from addresses passed in from pool data).
+        if self._tokens_df is not None:
+            if self._decimals_by_addr is None:
+                self._decimals_by_addr = {
+                    str(idx).lower(): int(dec)
+                    for idx, dec in self._tokens_df["decimals"].items()
+                }
+            if addr_lower in self._decimals_by_addr:
+                return self._decimals_by_addr[addr_lower]
 
         # Default to 18 decimals
         return 18
@@ -290,6 +295,7 @@ class OraclePriceSource:
             tokens_df: Token metadata DataFrame indexed by address.
         """
         self._tokens_df = tokens_df
+        self._decimals_by_addr = None  # invalidate cached decimals map
 
     def get_price_usd(self, token_address: str) -> Decimal | None:
         """Get token price in USD via oracle (uses cache)."""

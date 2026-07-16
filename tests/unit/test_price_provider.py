@@ -31,6 +31,32 @@ class TestOraclePriceSource:
 
         assert price == Decimal("1.0")
 
+    def test_token_decimals_resolved_from_tokens_df_case_insensitive(self) -> None:
+        """Non-18-decimal tokens must resolve decimals from tokens_df (any case)."""
+        import pandas as pd
+
+        df = pd.DataFrame(
+            {"symbol": ["USDC"], "decimals": [6]},
+            index=["0xAbCdEf0000000000000000000000000000000001"],
+        )
+        source = OraclePriceSource(MagicMock(), "0xusdc", tokens_df=df)
+        # queried in a different case than the index
+        assert source._get_token_decimals("0xabcdef0000000000000000000000000000000001") == 6
+
+    def test_adjust_rate_for_six_decimal_token(self) -> None:
+        """A 6-decimal token rate must be scaled by 10^(6-18), not left 1e12 high."""
+        import pandas as pd
+
+        df = pd.DataFrame(
+            {"symbol": ["USDC"], "decimals": [6]},
+            index=["0xAbCdEf0000000000000000000000000000000001"],
+        )
+        source = OraclePriceSource(MagicMock(), "0xusdc", tokens_df=df)
+        adjusted = source._adjust_rate_for_decimals(
+            Decimal("1_000_000_000_000"), "0xAbCdEf0000000000000000000000000000000001"
+        )
+        assert adjusted == Decimal("1")  # 1e12 * 10^-12
+
     def test_get_price_usd_weth(self) -> None:
         """Should return ETH/USD rate for WETH."""
         mock_oracle = MagicMock()

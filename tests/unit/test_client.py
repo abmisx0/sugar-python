@@ -427,6 +427,59 @@ class TestSugarClientGetMethods:
         assert client._data_processor is not None
 
 
+class TestPositionsByAccount:
+    """Test the positions_by_account aggregator (Relay/managed-veNFT resolution)."""
+
+    @patch("sugar.core.client.RelaySugar")
+    @patch("sugar.core.client.VeSugar")
+    @patch("sugar.core.client.Web3Provider")
+    @patch("sugar.core.client.LpSugar")
+    def test_relay_deposited_venft_uses_relay_principal(
+        self,
+        mock_lp_class: MagicMock,
+        mock_provider_class: MagicMock,
+        mock_ve_class: MagicMock,
+        mock_relay_class: MagicMock,
+    ) -> None:
+        """A relay-deposited veNFT (amount=0) must take principal+rewards from
+        RelaySugar.account_venfts, not its own zeroed amount."""
+        from sugar.models import PositionKind
+
+        mock_provider_class.return_value = MagicMock()
+        mock_lp = MagicMock()
+        mock_lp.count.return_value = 0  # no LP positions to scan
+        mock_lp.tokens_paginated.return_value = []
+        mock_lp_class.return_value = mock_lp
+
+        # veNFT deposited into a managed veNFT: amount=0, managed_id != 0
+        # (id, account, decimals, amount, voting, gov, rebase, expires, voted,
+        #  votes, token, permanent, delegate_id, managed_id)
+        mock_ve = MagicMock()
+        mock_ve.by_account.return_value = [
+            (100, "0xacc", 18, 0, 0, 8672 * 10**18, 0, 0, 0, [], "0xAERO", False, 0, 555)
+        ]
+        mock_ve_class.return_value = mock_ve
+
+        # Relay reports the exact per-account principal + rewards in account_venfts
+        # COLUMNS_RELAY[16] = account_venfts: [(venft_id, amount, rewards)]
+        mock_relay = MagicMock()
+        relay_row = [555, 18, 0, 0, 0, 0, [], "0xAERO", 0, True, 0, [], "0xrelay",
+                     True, False, "veAERO Maxi", [(100, 8616 * 10**18, 27 * 10**18)]]
+        mock_relay.all.return_value = [relay_row]
+        mock_relay_class.return_value = mock_relay
+
+        client = SugarClient(ChainId.BASE)
+        positions = client.positions_by_account("0xacc", price=False)
+
+        assert len(positions) == 1
+        p = positions[0]
+        assert p.kind == PositionKind.RELAY
+        assert p.locked is True
+        assert p.tokens[0].amount == pytest.approx(8616)  # from relay, not the 0 on the veNFT
+        assert p.rewards[0].amount == pytest.approx(27)
+        assert p.meta["venft_id"] == 100
+
+
 class TestSugarClientExportMethods:
     """Test export methods."""
 
