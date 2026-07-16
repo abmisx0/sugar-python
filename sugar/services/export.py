@@ -26,6 +26,12 @@ class ExportService:
         """
         self._base_dir = Path(base_dir)
 
+    def _resolve_output_dir(self, subdirectory: str | None) -> Path:
+        """Resolve and create output directory."""
+        output_dir = self._base_dir / subdirectory if subdirectory else self._base_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return output_dir
+
     def to_csv(
         self,
         df: pd.DataFrame,
@@ -45,17 +51,9 @@ class ExportService:
         Returns:
             Path to exported file.
         """
-        if subdirectory:
-            output_dir = self._base_dir / subdirectory
-        else:
-            output_dir = self._base_dir
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / filename
-
+        output_path = self._resolve_output_dir(subdirectory) / filename
         df.to_csv(output_path, index=index)
         logger.info(f"Exported {len(df)} rows to {output_path}")
-
         return output_path
 
     def to_json(
@@ -77,17 +75,9 @@ class ExportService:
         Returns:
             Path to exported file.
         """
-        if subdirectory:
-            output_dir = self._base_dir / subdirectory
-        else:
-            output_dir = self._base_dir
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / filename
-
+        output_path = self._resolve_output_dir(subdirectory) / filename
         df.to_json(output_path, orient=orient, indent=2)
         logger.info(f"Exported {len(df)} rows to {output_path}")
-
         return output_path
 
     def save_raw(
@@ -107,16 +97,8 @@ class ExportService:
         Returns:
             Path to saved file.
         """
-        if subdirectory:
-            output_dir = self._base_dir / subdirectory
-        else:
-            output_dir = self._base_dir
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / filename
-
+        output_path = self._resolve_output_dir(subdirectory) / filename
         with open(output_path, "w") as f:
             f.write(data)
-
         logger.debug(f"Saved raw data to {output_path}")
         return output_path

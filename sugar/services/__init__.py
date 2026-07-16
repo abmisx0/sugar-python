@@ -11,12 +11,14 @@ from sugar.services.deployment import (
 )
 from sugar.services.export import ExportService
 from sugar.services.price_provider import PriceProvider
+from sugar.services.snapshot import SnapshotStore
 
 __all__ = [
     "DataProcessor",
     "DeploymentFetcher",
     "ExportService",
     "PriceProvider",
+    "SnapshotStore",
     "fetch_all_deployments",
     "fetch_chain_deployment",
     "get_deployment_fetcher",

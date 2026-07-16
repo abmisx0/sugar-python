@@ -159,8 +159,9 @@ COLUMNS_RELAY = (
     "compounded",
     "withdrawable",
     "run_at",
-    "manager",  # manager address
+    "managers",  # list of manager addresses
     "relay",  # relay address
+    "compounder",  # whether this relay is an autocompounder
     "inactive",
     "name",
     "account_venfts",
@@ -179,7 +180,8 @@ COLUMNS_RELAY_ETH = (
 COLUMNS_RELAY_EXPORT = (
     "name",
     "inactive",
-    "manager",
+    "compounder",
+    "managers",
     "relay",
     "voting_amount",
     "used_voting_amount",

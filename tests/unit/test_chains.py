@@ -8,7 +8,6 @@ from sugar.config.chains import (
     ChainId,
     get_chain_config,
 )
-from sugar.core.exceptions import ChainNotSupportedError
 
 
 class TestChainId:

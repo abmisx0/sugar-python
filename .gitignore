@@ -108,3 +108,6 @@ node_modules/
 /scratch/
 /test/
 /internal/
+
+# Sugar snapshot store (persistent data cache)
+/sugar-snapshots/

@@ -5,8 +5,6 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 class TestLpSugar:
     """Test LpSugar contract wrapper."""
@@ -337,3 +335,105 @@ class TestSpotPriceOracle:
         rates = oracle.get_many_rates_to_eth(["0xusdc", "0xweth"])
 
         assert len(rates) == 2
+
+
+class TestBaseContractProgressReporting:
+    """Test BaseContract RPC progress reporting."""
+
+    def _make_lp(self):
+        """Create a minimal LpSugar instance with a named provider."""
+        from sugar.contracts.base import set_progress_callback
+        from sugar.contracts.lp_sugar import LpSugar
+
+        set_progress_callback(None)  # ensure clean state
+
+        with patch("sugar.contracts.base.load_abi") as mock_load_abi, \
+             patch("sugar.contracts.base.Web3.to_checksum_address") as mock_checksum:
+            mock_load_abi.return_value = []
+            mock_checksum.return_value = "0xcontract"
+
+            mock_provider = MagicMock()
+            mock_provider.config.name = "TestChain"
+            mock_contract = MagicMock()
+            mock_provider.web3.eth.contract.return_value = mock_contract
+            mock_contract.functions.count.return_value.call.return_value = 0
+
+            return LpSugar(mock_provider, "0xcontract", ()), mock_contract
+
+    def test_logs_rpc_call_when_no_callback(self, caplog: Any) -> None:
+        """Should log at INFO when no callback is registered."""
+        import logging
+
+        from sugar.contracts.base import set_progress_callback
+
+        set_progress_callback(None)
+        lp, mock_contract = self._make_lp()
+        with caplog.at_level(logging.INFO, logger="sugar.contracts.base"):
+            lp.count()
+
+        assert "RPC:" in caplog.text
+        assert "TestChain" in caplog.text
+        assert "count" in caplog.text
+
+    def test_calls_callback_instead_of_printing(self, capsys: Any) -> None:
+        """Should call callback and NOT print when a callback is registered."""
+        from sugar.contracts.base import set_progress_callback
+        from sugar.contracts.lp_sugar import LpSugar
+
+        recorded: list[tuple] = []
+
+        def my_callback(chain, sugar_type, method, offset):
+            recorded.append((chain, sugar_type, method, offset))
+
+        with patch("sugar.contracts.base.load_abi") as mock_load_abi, \
+             patch("sugar.contracts.base.Web3.to_checksum_address") as mock_checksum:
+            mock_load_abi.return_value = []
+            mock_checksum.return_value = "0xcontract"
+
+            mock_provider = MagicMock()
+            mock_provider.config.name = "TestChain"
+            mock_contract = MagicMock()
+            mock_provider.web3.eth.contract.return_value = mock_contract
+            mock_contract.functions.count.return_value.call.return_value = 0
+
+            lp = LpSugar(mock_provider, "0xcontract", ())
+
+        set_progress_callback(my_callback)
+        try:
+            lp.count()
+
+            captured = capsys.readouterr()
+            assert captured.out == ""
+            assert len(recorded) == 1
+            assert recorded[0][0] == "TestChain"
+            assert recorded[0][2] == "count"
+        finally:
+            set_progress_callback(None)
+
+    def test_set_and_get_progress_callback(self) -> None:
+        """set_progress_callback / get_progress_callback should round-trip."""
+        from sugar.contracts.base import get_progress_callback, set_progress_callback
+
+        cb = lambda *a: None
+        set_progress_callback(cb)
+        try:
+            assert get_progress_callback() is cb
+        finally:
+            set_progress_callback(None)
+
+        assert get_progress_callback() is None
+
+    def test_logs_offset_when_provided(self, caplog: Any) -> None:
+        """Progress output should include the offset for paginated calls."""
+        import logging
+
+        from sugar.contracts.base import set_progress_callback
+
+        set_progress_callback(None)
+        lp, mock_contract = self._make_lp()
+        # _report_progress is also called in _paginate; trigger it directly
+        mock_contract.functions.all.return_value.call.return_value = []
+        with caplog.at_level(logging.INFO, logger="sugar.contracts.base"):
+            lp._paginate("all", limit=100, start_offset=50)
+
+        assert "offset=50" in caplog.text

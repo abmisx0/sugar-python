@@ -13,8 +13,7 @@ import os
 import pandas as pd
 import pytest
 
-from sugar import SugarClient, ChainId
-
+from sugar import ChainId, SugarClient
 
 # Skip all integration tests if no RPC configured
 pytestmark = pytest.mark.integration

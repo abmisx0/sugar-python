@@ -2,8 +2,6 @@
 
 from decimal import Decimal
 
-import pytest
-
 from sugar.utils.wei import from_wei, to_wei
 
 

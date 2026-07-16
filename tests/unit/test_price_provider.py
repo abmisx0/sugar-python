@@ -14,7 +14,6 @@ from sugar.services.price_provider import (
     DefiLlamaPriceSource,
     OraclePriceSource,
     PriceProvider,
-    PriceResult,
 )
 
 

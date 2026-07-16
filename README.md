@@ -7,29 +7,37 @@ Python library for interacting with Velodrome/Aerodrome Sugar Protocol contracts
 - **Multi-chain support**: 12 chains including Base, Optimism, Mode, Lisk, and more
 - **Full contract coverage**: LpSugar, VeSugar, RelaySugar, RewardsSugar
 - **Price integration**: On-chain oracle with CoinGecko and DefiLlama fallbacks
+- **Persistent snapshots**: Every fetch is automatically indexed to disk for posterity (Sugar contracts only serve real-time data)
 - **Type safety**: Full type hints and py.typed marker
 - **Pandas integration**: All data returned as DataFrames
 - **Automatic pagination**: Handles large datasets automatically
 
-## Installation
+## Requirements
+
+- Python 3.10+
+- An RPC endpoint for at least one supported chain (public endpoints work; a free [dRPC](https://drpc.org/) or [Alchemy](https://www.alchemy.com/) key is recommended for full-chain crawls)
+
+## From Zero to CSV
 
 ```bash
+git clone https://github.com/abmisx0/sugar-python.git
+cd sugar-python
 pip install -e .
+cp .env.example .env     # then edit .env with your RPC endpoints
+python examples/export_pools.py
 ```
 
-Or install dependencies directly:
-
-```bash
-pip install pandas web3 python-dotenv requests
-```
+This exports token metadata and pool data for Base under `output/`, and writes
+block-stamped snapshots to `sugar-snapshots/`. See [EXPORTS.md](EXPORTS.md) for
+the snapshot layout and the other example scripts.
 
 ## Quick Start
 
 ```python
 from sugar import SugarClient, ChainId
 
-# Initialize client for a chain
-client = SugarClient(ChainId.BASE)
+# RPC comes from the constructor (recommended) or the RPC_LINK_<CHAIN> env var
+client = SugarClient(ChainId.BASE, rpc_url="https://base-mainnet.example/<key>")
 
 # Get all liquidity pools
 pools = client.get_pools()
@@ -45,9 +53,46 @@ client.export_dataframe(pools, "pools")
 client.export_dataframe(tokens, "tokens", include_block=False)
 ```
 
+### Providing an RPC endpoint
+
+Pass `rpc_url` directly — handy when you already derive RPC URLs from an
+Alchemy/Infura key and don't want a parallel `.env`:
+
+```python
+client = SugarClient(ChainId.BASE, rpc_url=my_alchemy_base_url)
+```
+
+If `rpc_url` is omitted, the client falls back to the chain's environment
+variable (e.g. `RPC_LINK_BASE`), loaded from `.env`. See
+[Configuration](#configuration).
+
+### Plain dicts instead of DataFrames
+
+Every reader returns a pandas DataFrame. To hand data to a non-pandas pipeline,
+convert to plain records:
+
+```python
+pools = client.get_pools_with_rewards()
+rows = pools.reset_index().to_dict("records")   # list[dict], JSON-serializable
+```
+
+### Read-only guarantee
+
+This library is **read-only**. It issues `eth_call` requests only — it never
+builds, signs, or broadcasts transactions and never needs a private key. Safe
+to point at any account or contract for analysis.
+
+To see per-call RPC progress while fetching, enable logging first:
+
+```python
+from sugar import setup_logging
+
+setup_logging()  # INFO-level progress to stderr
+```
+
 ## Configuration
 
-Create a `.env` file with your RPC endpoints:
+Create a `.env` file with your RPC endpoints (copy `.env.example` to start):
 
 ```bash
 # Required: At least one RPC endpoint
@@ -127,14 +172,43 @@ epochs_df = client.get_epochs_latest()       # Latest epoch rewards
 combined_df = client.get_pools_with_rewards()
 ```
 
+### Persistent Snapshots
+
+Sugar contracts only serve real-time state — once a block passes, the data is
+gone unless you saved it. The client therefore snapshots every fetched dataset
+to disk automatically, stamped with the block number, building a local history
+across runs:
+
+```python
+client = SugarClient(ChainId.BASE)          # snapshots on by default
+pools = client.get_pools()                  # writes sugar-snapshots/base/pools/<block>.csv.gz
+
+client.snapshot_history("pools")            # DataFrame: block, fetched_at, rows, file
+old = client.load_snapshot("pools")         # latest snapshot
+old = client.load_snapshot("pools", block=31000000)  # specific block
+
+# Opt out, or relocate the store
+client = SugarClient(ChainId.BASE, snapshot=False)
+client = SugarClient(ChainId.BASE, snapshot_dir="/my/archive")
+```
+
+Snapshots are written as parquet when `pyarrow` is installed
+(`pip install -e ".[parquet]"`), otherwise as gzipped CSV. The default
+directory is `./sugar-snapshots` and can be overridden with the
+`SUGAR_SNAPSHOT_DIR` environment variable. Datasets snapshotted: `pools`,
+`tokens`, `ve_positions`, `relays`, `epochs_latest`, `pools_with_rewards`.
+
 ### Export Methods
 
 ```python
 # Export any DataFrame to CSV with standard naming
-client.export_dataframe(df, "pools")                    # exports/data/pools_base_12345678.csv
-client.export_dataframe(df, "tokens", include_block=False)  # exports/data/tokens_base.csv
-client.export_dataframe(df, "custom", subdirectory="my-data")  # exports/my-data/custom_base_12345678.csv
+client.export_dataframe(df, "pools")                    # data/pools_base_12345678.csv
+client.export_dataframe(df, "tokens", include_block=False)  # data/tokens_base.csv
+client.export_dataframe(df, "custom", subdirectory="my-data")  # my-data/custom_base_12345678.csv
 ```
+
+Paths are relative to the client's `export_dir` (defaults to the working
+directory).
 
 ### Price Provider
 
@@ -151,6 +225,7 @@ results = client.prices.get_prices_batch(["0x...", "0x..."])
 ```
 
 Price sources (in order):
+
 1. **On-chain Oracle** (Spot Price Aggregator)
 2. **CoinGecko** (API fallback)
 3. **DefiLlama** (Secondary API fallback)
@@ -195,30 +270,13 @@ print(df[['symbol', 'tvl_usd', 'incentives_usd', 'gauge_fees_usd', 'votes']])
 
 ## Examples
 
-See the `examples/` directory for complete usage examples:
+See the `examples/` directory for runnable usage examples
+(and [EXPORTS.md](EXPORTS.md) for where they write output):
 
-- `update-lp-data.py` - Export LP pool and token data
-- `update-relay-data.py` - Export relay data
-- `update-lock-data.py` - Export veNFT lock data
-- `pools-with-rewards.py` - Combined LP + rewards with pricing (supports multi-chain)
-- `max-lock-analysis.py` - Analyze max-locked veNFTs
-- `pool-voters.py` - Analyze voters for specific pools
-- `veToken-holders.py` - Analyze veToken holder distribution
-
-### Multi-chain Example
-
-The `pools-with-rewards.py` script supports fetching data from multiple chains:
-
-```bash
-# Aerodrome (Base only)
-python examples/pools-with-rewards.py --aero
-
-# Velodrome (all other chains)
-python examples/pools-with-rewards.py --velo
-
-# All chains
-python examples/pools-with-rewards.py --all
-```
+- `quickstart.py` - Connect and read pools with rewards
+- `export_pools.py` - Export token and pool data to CSV under `output/`
+- `ve_holders.py` - Aggregate veNFT governance weight by holder
+- `list_relays.py` - List active Relays (managed veNFTs)
 
 ## Development
 
@@ -235,21 +293,21 @@ pytest tests/integration/ -m integration
 ### Type Checking
 
 ```bash
-mypy src/sugar/
+mypy sugar/
 ```
 
 ### Linting
 
 ```bash
-ruff check src/
-ruff format src/
+ruff check sugar/
+ruff format sugar/
 ```
 
 ## Project Structure
 
 ```
 sugar-python/
-├── src/sugar/
+├── sugar/
 │   ├── __init__.py          # Public API exports
 │   ├── core/
 │   │   ├── client.py        # SugarClient facade
@@ -269,6 +327,7 @@ sugar-python/
 │   ├── services/
 │   │   ├── data_processor.py  # Data transformation & USD pricing
 │   │   ├── price_provider.py  # Multi-source price fetching
+│   │   ├── snapshot.py        # Persistent block-stamped snapshots
 │   │   └── export.py          # CSV/JSON export utilities
 │   └── utils/
 │       ├── wei.py           # Wei conversion utilities
@@ -282,6 +341,6 @@ sugar-python/
 
 ## License
 
-GNU General Public License v3.0 (GPL-3.0)
+GNU General Public License v3.0 or later (GPL-3.0-or-later)
 
 See [LICENSE](LICENSE) file for full license text.

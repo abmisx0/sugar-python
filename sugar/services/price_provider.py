@@ -68,7 +68,7 @@ class OraclePriceSource:
         "0xbfd291da8a403daaf7e5e9dc1ec0aceacd4848b9",  # USX
         "0x8c6f28f2f1a3c87f0f938b96d27520d9751ec8d9",  # sUSD
         "0xc40f949f8a4e094d1b49a23ea9241d289b7b2819",  # LUSD
-        # Mode
+        # Mode / Superseed (same address)
         "0x1217bfe6c773eec6cc4a38b5dc45b92292b6e189",  # oUSDT
         # Lisk
         "0x43f2376d5d03553ae72f4a8093bbe9de4336eb08",  # USDT0
@@ -76,8 +76,6 @@ class OraclePriceSource:
         "0xba9986d2381edf1da03b0b9c1f8b00dc4aacc369",  # USDC.e
         # Unichain
         "0x078d782b760474a361dda0af3839290b0ef57ad6",  # USDC
-        # Superseed
-        "0x1217bfe6c773eec6cc4a38b5dc45b92292b6e189",  # oUSDT
         # Metal
         "0x51e85d70944256710cb141847f1a04f568c1db0e",  # USDC.e
         # Swell
@@ -95,14 +93,16 @@ class OraclePriceSource:
     WETH_ADDRESS = "0x4200000000000000000000000000000000000006"
 
     # Token aliases: maps bridged tokens to their canonical counterparts for pricing
-    # Key = bridged token address (lowercase), Value = canonical token address
-    # The canonical address should be priceable on the oracle
-    TOKEN_ALIASES: dict[str, str] = {
-        # Bridged OP token -> Canonical OP on Optimism
+    # Key = bridged token address (lowercase)
+    # Value = (canonical token address, canonical chain_id where it's priceable)
+    # The alias is only applied when the oracle is on the canonical chain.
+    # On other chains, PriceProvider handles cross-chain pricing via DefiLlama.
+    TOKEN_ALIASES: dict[str, tuple[str, int]] = {
+        # Bridged OP token -> Canonical OP on Optimism (chain 10)
         # Used on: Mode, Lisk, Fraxtal, Ink, Soneium, Metal, Superseed, Swell, Unichain
-        "0xafcc6ae807187a31e84138f3860d4ce27973e01b": "0x4200000000000000000000000000000000000042",
-        # Bridged CELO token -> Canonical CELO on Celo
-        "0x83e04b17ce5ccc1b1dcab192c618776114fa064a": "0x471ece3750da237f93b8e339c536989b8978a438",
+        "0xafcc6ae807187a31e84138f3860d4ce27973e01b": ("0x4200000000000000000000000000000000000042", 10),
+        # Bridged CELO token -> Canonical CELO on Celo (chain 42220)
+        "0x83e04b17ce5ccc1b1dcab192c618776114fa064a": ("0x471ece3750da237f93b8e339c536989b8978a438", 42220),
     }
 
     # Known token decimals (for oracle rate adjustment)
@@ -127,15 +127,17 @@ class OraclePriceSource:
         "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf": 8,  # Base cbBTC
         "0x03c7054bcb39f7b2e5b2c7acb37583e32d70cfa3": 8,  # Lisk WBTC
         "0x6f36dbd829de9b7e077db8a35b480d4329ceb331": 8,  # Superseed cbBTC
-        "0x6c84a8f1c29108f47a79964b5fe888d4f4d0de40": 8,  # OP tBTC
         "0x73e0c0d45e048d25fc26fa3159b0aa04bfa4db98": 8,  # Ink kBTC
+        # all other tokens are 18 decimals
+        "0x6c84a8f1c29108f47a79964b5fe888d4f4d0de40": 18,  # OP tBTC
     }
 
     def __init__(
         self,
         oracle: SpotPriceOracle,
         usdc_address: str | None = None,
-        tokens_df: "pd.DataFrame | None" = None,
+        tokens_df: pd.DataFrame | None = None,
+        chain_id: int | None = None,
     ) -> None:
         """
         Initialize oracle price source.
@@ -144,10 +146,12 @@ class OraclePriceSource:
             oracle: SpotPriceOracle contract wrapper.
             usdc_address: USDC address on this chain for USD conversion.
             tokens_df: Optional token metadata DataFrame with decimals column.
+            chain_id: Numeric chain ID (used for chain-aware alias resolution).
         """
         self._oracle = oracle
         self._usdc_address = usdc_address
         self._tokens_df = tokens_df
+        self._chain_id = chain_id
         # Cache for individual token prices (ETH-denominated)
         self._eth_price_cache: dict[str, Decimal] = {}
         # Cached ETH/USD rate
@@ -155,12 +159,15 @@ class OraclePriceSource:
         self._eth_usd_timestamp: float = 0
         self._eth_usd_ttl = 60  # seconds
 
-    def _get_eth_usd_rate(self) -> Decimal:
+    def _get_eth_usd_rate(self) -> Decimal | None:
         """
         Get the ETH/USD rate using the first connector (stablecoin).
 
         The first connector in the list is always a stablecoin (USDC),
         so 1 stablecoin / ETH gives us ETH price in USD terms.
+
+        Returns None when the rate cannot be determined, so callers fall
+        through to the next price source instead of using a made-up rate.
         """
         # Check cache
         if (
@@ -173,8 +180,8 @@ class OraclePriceSource:
         # The rate returned is: how many USDC for 1 ETH
         connectors = self._oracle.connectors
         if not connectors:
-            # Fallback: assume ETH = $3000 if no connectors
-            return Decimal("3000")
+            logger.warning("No connectors configured for ETH/USD rate")
+            return None
 
         stablecoin = connectors[0]  # First connector is USDC
 
@@ -197,8 +204,9 @@ class OraclePriceSource:
         except Exception as e:
             logger.debug(f"Failed to get ETH/USD rate: {e}")
 
-        # Fallback
-        return Decimal("3000")
+        # No rate available - let callers fall through to API price sources
+        logger.warning("ETH/USD rate unavailable from oracle")
+        return None
 
     def _is_stablecoin(self, token_address: str) -> bool:
         """Check if token is a known stablecoin."""
@@ -209,7 +217,9 @@ class OraclePriceSource:
         Resolve token alias to canonical address for pricing.
 
         Some bridged tokens (e.g., OP on L2s) should use the price of
-        their canonical counterpart on the main chain.
+        their canonical counterpart on the main chain. The alias is only
+        applied when the oracle is on the canonical chain where the token
+        is priceable.
 
         Args:
             token_address: Token address to resolve.
@@ -217,7 +227,12 @@ class OraclePriceSource:
         Returns:
             Canonical token address (or original if no alias).
         """
-        return self.TOKEN_ALIASES.get(token_address.lower(), token_address)
+        alias = self.TOKEN_ALIASES.get(token_address.lower())
+        if alias is not None:
+            canonical_addr, canonical_chain_id = alias
+            if self._chain_id == canonical_chain_id:
+                return canonical_addr
+        return token_address
 
     def _get_token_decimals(self, token_address: str) -> int:
         """
@@ -245,9 +260,7 @@ class OraclePriceSource:
         # Default to 18 decimals
         return 18
 
-    def _adjust_rate_for_decimals(
-        self, rate: Decimal, token_address: str
-    ) -> Decimal:
+    def _adjust_rate_for_decimals(self, rate: Decimal, token_address: str) -> Decimal:
         """
         Adjust oracle rate for token decimals.
 
@@ -269,7 +282,7 @@ class OraclePriceSource:
         adjustment = Decimal(10) ** (decimals - 18)
         return rate * adjustment
 
-    def set_tokens_df(self, tokens_df: "pd.DataFrame") -> None:
+    def set_tokens_df(self, tokens_df: pd.DataFrame) -> None:
         """
         Set token metadata DataFrame for decimal lookups.
 
@@ -299,8 +312,9 @@ class OraclePriceSource:
         # Use resolved address for cache lookup
         if resolved_lower in self._eth_price_cache:
             eth_price = self._eth_price_cache[resolved_lower]
-            if eth_price > 0:
-                return eth_price * self._get_eth_usd_rate()
+            eth_usd = self._get_eth_usd_rate()
+            if eth_price > 0 and eth_usd is not None:
+                return eth_price * eth_usd
             return None
 
         # Not in cache - fetch individually (should be rare after batch prefetch)
@@ -312,9 +326,13 @@ class OraclePriceSource:
             )
             if rates and rates[0] > 0:
                 # Adjust rate for token decimals before caching
-                adjusted_rate = self._adjust_rate_for_decimals(rates[0], resolved_address)
+                adjusted_rate = self._adjust_rate_for_decimals(
+                    rates[0], resolved_address
+                )
                 self._eth_price_cache[resolved_lower] = adjusted_rate
-                return adjusted_rate * self._get_eth_usd_rate()
+                eth_usd = self._get_eth_usd_rate()
+                if eth_usd is not None:
+                    return adjusted_rate * eth_usd
         except Exception as e:
             logger.debug(f"Oracle price fetch failed for {original_address}: {e}")
 
@@ -513,6 +531,41 @@ class DefiLlamaPriceSource:
             logger.debug(f"DefiLlama price fetch failed for {token_address}: {e}")
             return None
 
+    @classmethod
+    def fetch_price_by_chain(cls, chain_id: int, token_address: str) -> Decimal | None:
+        """
+        Fetch price for a token on a specific chain via DefiLlama.
+
+        Standalone method for cross-chain price lookups (e.g., pricing
+        bridged OP on L2s using OP's price on Optimism).
+
+        Args:
+            chain_id: Numeric chain ID of the canonical chain.
+            token_address: Token address on the canonical chain.
+
+        Returns:
+            Price in USD or None.
+        """
+        chain_name = cls.CHAIN_MAP.get(chain_id)
+        if not chain_name:
+            return None
+
+        try:
+            coin_id = f"{chain_name}:{token_address}"
+            url = f"{cls.BASE_URL}/prices/current/{coin_id}"
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            coins = data.get("coins", {})
+            if coin_id in coins:
+                return Decimal(str(coins[coin_id]["price"]))
+            return None
+        except Exception as e:
+            logger.debug(
+                f"Cross-chain DefiLlama fetch failed for {chain_id}:{token_address}: {e}"
+            )
+            return None
+
 
 class PriceProvider:
     """
@@ -543,6 +596,16 @@ class PriceProvider:
         self._defillama = defillama
         self._cache: dict[str, PriceResult] = {}
         self._cache_ttl = 60  # seconds
+
+    def set_tokens_df(self, tokens_df: pd.DataFrame) -> None:
+        """
+        Set token metadata DataFrame on the oracle source for decimal lookups.
+
+        Args:
+            tokens_df: Token metadata DataFrame indexed by address.
+        """
+        if self._oracle is not None:
+            self._oracle.set_tokens_df(tokens_df)
 
     def prefetch_prices(self, token_addresses: list[str]) -> None:
         """
@@ -620,6 +683,23 @@ class PriceProvider:
                 result = PriceResult(
                     price=price,
                     source="defillama",
+                    timestamp=int(time.time()),
+                )
+                self._cache[cache_key] = result
+                return result
+
+        # Cross-chain fallback: bridged tokens priced via canonical chain
+        alias = OraclePriceSource.TOKEN_ALIASES.get(cache_key)
+        if alias is not None:
+            canonical_addr, canonical_chain_id = alias
+            sources_tried.append("defillama-xchain")
+            price = DefiLlamaPriceSource.fetch_price_by_chain(
+                canonical_chain_id, canonical_addr
+            )
+            if price is not None:
+                result = PriceResult(
+                    price=price,
+                    source="defillama-xchain",
                     timestamp=int(time.time()),
                 )
                 self._cache[cache_key] = result

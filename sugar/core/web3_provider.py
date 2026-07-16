@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+
 import dotenv
 from web3 import Web3
 from web3.contract import Contract
@@ -17,18 +18,21 @@ logger = logging.getLogger(__name__)
 class Web3Provider:
     """Manages Web3 connections for different chains."""
 
-    def __init__(self, chain_config: ChainConfig) -> None:
+    def __init__(self, chain_config: ChainConfig, rpc_url: str | None = None) -> None:
         """
         Initialize Web3 provider for a specific chain.
 
         Args:
             chain_config: Configuration for the target chain.
+            rpc_url: Explicit RPC endpoint URL. If omitted, falls back to the
+                chain's ``rpc_env_var`` environment variable (loaded from .env).
 
         Raises:
             RpcConnectionError: If connection to the RPC endpoint fails.
         """
         dotenv.load_dotenv()
         self._config = chain_config
+        self._rpc_url = rpc_url
         self._web3: Web3 | None = None
 
     @property
@@ -45,11 +49,12 @@ class Web3Provider:
 
     def _create_connection(self) -> Web3:
         """Create and validate Web3 connection."""
-        rpc_url = os.environ.get(self._config.rpc_env_var)
+        rpc_url = self._rpc_url or os.environ.get(self._config.rpc_env_var)
         if not rpc_url:
             raise RpcConnectionError(
                 self._config.name,
-                f"Environment variable {self._config.rpc_env_var} not set",
+                f"No rpc_url provided and environment variable "
+                f"{self._config.rpc_env_var} is not set",
             )
 
         web3 = Web3(Web3.HTTPProvider(rpc_url))

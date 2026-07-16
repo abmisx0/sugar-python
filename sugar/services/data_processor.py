@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -24,6 +24,11 @@ if TYPE_CHECKING:
     from sugar.services.price_provider import PriceProvider
 
 logger = logging.getLogger(__name__)
+
+# Factory address → version label appended to pool symbol (lowercase keys)
+FACTORY_VERSION_LABELS: dict[str, str] = {
+    "0xe13dd1fba721aa81a1826d9523ac9bc7d260c879": "(v2)",
+}
 
 # Minimal ERC20 ABI for symbol lookup
 ERC20_SYMBOL_ABI = [
@@ -60,6 +65,16 @@ class DataProcessor:
         self._web3_provider = web3_provider
         self._symbol_cache: dict[str, str] = {}
 
+    @staticmethod
+    def _clean_symbols(series: pd.Series) -> pd.Series:
+        """Normalize symbol strings across pools and tokens."""
+        return (
+            series.astype(str)
+            .str.replace("₮", "T", regex=False)
+            .str.replace("vAMMV2", "vAMM", regex=False)
+            .str.replace("sAMMV2", "sAMM", regex=False)
+        )
+
     def process_lp_all(
         self,
         raw_data: list[tuple],
@@ -84,13 +99,23 @@ class DataProcessor:
         df = pd.DataFrame(raw_data, columns=columns)
         df.drop_duplicates(subset=["lp"], inplace=True)
 
-        # Fix empty symbols for CL pools
+        df["symbol"] = self._clean_symbols(df["symbol"])
+
+        # Fix empty symbols for CL pools first, so versioning appends to the full name
         if tokens_df is not None:
             empty_symbols = df["symbol"] == ""
             if empty_symbols.any():
                 df.loc[empty_symbols, "symbol"] = df.loc[empty_symbols].apply(
                     lambda row: self._get_cl_symbol(row, tokens_df), axis=1
                 )
+
+        # Append version label for pools from known versioned factories
+        if "factory" in df.columns:
+            factory_lower = df["factory"].str.lower()
+            for factory_addr, label in FACTORY_VERSION_LABELS.items():
+                mask = factory_lower == factory_addr
+                if mask.any():
+                    df.loc[mask, "symbol"] = df.loc[mask, "symbol"] + " " + label
 
         return df
 
@@ -173,6 +198,8 @@ class DataProcessor:
         df.set_index("token_address", inplace=True)
         df.drop("account_balance", axis=1, inplace=True)
 
+        df["symbol"] = self._clean_symbols(df["symbol"])
+
         if listed_only:
             df = df[df["listed"]]
 
@@ -199,7 +226,7 @@ class DataProcessor:
         df.drop_duplicates(subset=["id"], inplace=True)
         df.set_index("id", inplace=True)
 
-        if convert_amounts:
+        if convert_amounts and not df.empty:
             for col in [
                 "amount",
                 "voting_amount",
@@ -208,7 +235,7 @@ class DataProcessor:
             ]:
                 df[col] = df[col].apply(lambda x: float(from_wei(x, 18)))
 
-        if process_votes:
+        if process_votes and not df.empty:
             df["votes"] = df.apply(
                 lambda row: self._process_votes(row["votes"], row["governance_amount"]),
                 axis=1,
@@ -250,7 +277,12 @@ class DataProcessor:
         df = pd.DataFrame(raw_data, columns=COLUMNS_RELAY)
         df.set_index("venft_id", inplace=True)
 
-        if convert_amounts:
+        # Decode name field — bytes32 or null-padded string from Solidity
+        df["name"] = df["name"].apply(
+            lambda x: (x.decode("utf-8", errors="ignore") if isinstance(x, bytes) else str(x)).rstrip("\x00")
+        )
+
+        if convert_amounts and not df.empty:
             for col in ["amount", "voting_amount", "used_voting_amount", "compounded"]:
                 df[col] = df[col].apply(lambda x: float(from_wei(x, 18)))
 
@@ -374,11 +406,10 @@ class DataProcessor:
         # Add priced columns if price provider is available
         if self._prices and tokens_df is not None:
             # Set tokens_df on oracle source for decimal lookups
-            if hasattr(self._prices, "_oracle") and self._prices._oracle is not None:
-                self._prices._oracle.set_tokens_df(tokens_df)
+            self._prices.set_tokens_df(tokens_df)
 
             # Pre-collect all unique tokens that need pricing
-            unique_tokens = self._collect_unique_tokens(combined, tokens_df)
+            unique_tokens = self._collect_unique_tokens(combined)
             logger.debug(f"Prefetching prices for {len(unique_tokens)} unique tokens")
 
             # Batch prefetch all prices at once (uses batched RPC calls)
@@ -387,28 +418,16 @@ class DataProcessor:
             # Now apply pricing (will use cached prices)
             # Incentives (formerly bribes) - voting incentives from external sources
             combined["incentives_usd"] = combined["incentives"].apply(
-                lambda x: (
-                    self._price_rewards(x, tokens_df)
-                    if isinstance(x, list) and x
-                    else Decimal(0)
-                )
+                lambda x: self._price_rewards(x) if isinstance(x, list) and x else Decimal(0)
             )
             # Gauge fees - fees collected by the gauge and distributed to voters
             combined["gauge_fees_usd"] = combined["fees"].apply(
-                lambda x: (
-                    self._price_rewards(x, tokens_df)
-                    if isinstance(x, list) and x
-                    else Decimal(0)
-                )
+                lambda x: self._price_rewards(x) if isinstance(x, list) and x else Decimal(0)
             )
 
             # Add incentive token prices array
             combined["incentive_token_prices"] = combined["incentives"].apply(
-                lambda x: (
-                    self._get_reward_token_prices(x, tokens_df)
-                    if isinstance(x, list) and x
-                    else []
-                )
+                lambda x: self._get_reward_token_prices(x) if isinstance(x, list) and x else []
             )
 
             # Convert reserves and fees from wei and price in USD
@@ -441,17 +460,17 @@ class DataProcessor:
                 combined["token0_fees_usd"] + combined["token1_fees_usd"]
             )
             # Projected pool fees = pool_fees_usd scaled by time remaining in epoch
-            # Epochs reset every Wednesday at midnight UTC
+            # Epochs reset every Thursday at midnight UTC
             epoch_multiplier = self._get_epoch_projection_multiplier()
             combined["projected_pool_fees_usd"] = combined["pool_fees_usd"] * Decimal(
                 str(epoch_multiplier)
             )
             combined["token0_usd"] = combined.apply(
-                lambda row: self._get_token_price(row["token0"], tokens_df),
+                lambda row: self._get_token_price(row["token0"]),
                 axis=1,
             )
             combined["token1_usd"] = combined.apply(
-                lambda row: self._get_token_price(row["token1"], tokens_df),
+                lambda row: self._get_token_price(row["token1"]),
                 axis=1,
             )
 
@@ -467,8 +486,6 @@ class DataProcessor:
         Returns:
             Multiplier for fee projection (e.g., 1.4 if 5 days have passed).
         """
-        from datetime import timedelta
-
         now = datetime.now(timezone.utc)
 
         # Find the most recent Thursday at midnight UTC
@@ -490,14 +507,12 @@ class DataProcessor:
     def _collect_unique_tokens(
         self,
         combined_df: pd.DataFrame,
-        tokens_df: pd.DataFrame,
     ) -> list[str]:
         """
         Collect all unique token addresses that need pricing.
 
         Args:
             combined_df: Combined LP + rewards DataFrame.
-            tokens_df: Token metadata DataFrame.
 
         Returns:
             List of unique token addresses.
@@ -529,7 +544,6 @@ class DataProcessor:
     def _price_rewards(
         self,
         rewards: list[tuple],
-        tokens_df: pd.DataFrame,
     ) -> Decimal:
         """Calculate total USD value of rewards."""
         if not rewards or not self._prices:
@@ -546,7 +560,6 @@ class DataProcessor:
     def _get_reward_token_prices(
         self,
         rewards: list[tuple],
-        tokens_df: pd.DataFrame,
     ) -> list[dict]:
         """Get array of token prices for rewards."""
         if not rewards or not self._prices:
@@ -611,7 +624,6 @@ class DataProcessor:
     def _get_token_price(
         self,
         token_address: str,
-        tokens_df: pd.DataFrame,
     ) -> Decimal | None:
         """Get token price in USD."""
         if not self._prices:

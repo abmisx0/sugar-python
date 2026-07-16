@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from sugar.config.chains import CHAIN_CONFIGS, ChainConfig, ChainId, get_chain_config
+from sugar.config.chains import ChainConfig, ChainId, get_chain_config
 from sugar.contracts.lp_sugar import LpSugar
 from sugar.contracts.price_oracle import SpotPriceOracle
 from sugar.contracts.relay_sugar import RelaySugar
@@ -24,6 +24,7 @@ from sugar.services.price_provider import (
     OraclePriceSource,
     PriceProvider,
 )
+from sugar.services.snapshot import SnapshotStore
 
 if TYPE_CHECKING:
     pass
@@ -49,21 +50,36 @@ class SugarClient:
         self,
         chain: ChainId | str,
         export_dir: str | Path = ".",
+        snapshot: bool = True,
+        snapshot_dir: str | Path | None = None,
+        *,
+        rpc_url: str | None = None,
     ) -> None:
         """
         Initialize SugarClient for a specific chain.
 
         Args:
             chain: Chain identifier (ChainId enum or string like "base", "op").
+            rpc_url: Explicit RPC endpoint URL. If omitted, falls back to the
+                chain's RPC environment variable (e.g. RPC_LINK_BASE), loaded
+                from .env. Constructor injection lets you reuse RPC URLs you
+                already derive from an Alchemy/Infura key without a parallel
+                .env.
             export_dir: Base directory for data exports.
+            snapshot: Whether to automatically persist every fetched dataset
+                to the snapshot store (Sugar only serves real-time data, so
+                snapshots build a local history across runs).
+            snapshot_dir: Root directory for snapshots. Defaults to the
+                SUGAR_SNAPSHOT_DIR env var, falling back to ./sugar-snapshots.
 
         Raises:
             ValueError: If chain is not supported.
             RpcConnectionError: If RPC connection fails.
         """
         self._config = get_chain_config(chain)
-        self._provider = Web3Provider(self._config)
+        self._provider = Web3Provider(self._config, rpc_url=rpc_url)
         self._export = ExportService(export_dir)
+        self._snapshots = SnapshotStore(snapshot_dir) if snapshot else None
 
         # Initialize LP Sugar (always available)
         self._lp = LpSugar(
@@ -220,7 +236,9 @@ class SugarClient:
                     usdc_address = connector
                     break
 
-            oracle_source = OraclePriceSource(self._price_oracle, usdc_address)
+            oracle_source = OraclePriceSource(
+                self._price_oracle, usdc_address, chain_id=self._config.chain_id.value
+            )
 
         # Create CoinGecko source
         coingecko_source = CoinGeckoPriceSource(self._config.chain_id)
@@ -250,6 +268,7 @@ class SugarClient:
         if self._tokens_df is None or refresh:
             raw_data = self._lp.tokens_paginated()
             self._tokens_df = self.processor.process_tokens(raw_data, listed_only=False)
+            self._record_snapshot(self._tokens_df, "tokens")
 
         if listed_only:
             return self._tokens_df[self._tokens_df["listed"]]
@@ -269,7 +288,9 @@ class SugarClient:
         tokens_df = self.get_tokens(listed_only=False)
 
         raw_data = self._lp.all_paginated(filter_type=filter_type)
-        return self.processor.process_lp_all(raw_data, tokens_df)
+        df = self.processor.process_lp_all(raw_data, tokens_df)
+        self._record_snapshot(df, "pools")
+        return df
 
     def get_ve_positions(self) -> pd.DataFrame:
         """
@@ -282,7 +303,9 @@ class SugarClient:
             ContractNotAvailableError: If VeSugar is not available.
         """
         raw_data = self.ve.all_paginated()
-        return self.processor.process_ve_all(raw_data)
+        df = self.processor.process_ve_all(raw_data)
+        self._record_snapshot(df, "ve_positions")
+        return df
 
     def get_relays(self, filter_inactive: bool = True) -> pd.DataFrame:
         """
@@ -298,9 +321,11 @@ class SugarClient:
             ContractNotAvailableError: If RelaySugar is not available.
         """
         raw_data = self.relay.all()
-        return self.processor.process_relay_all(
+        df = self.processor.process_relay_all(
             raw_data, filter_inactive=filter_inactive
         )
+        self._record_snapshot(df, "relays")
+        return df
 
     def get_epochs_latest(self) -> pd.DataFrame:
         """
@@ -316,7 +341,9 @@ class SugarClient:
         # Use pool count to inform pagination limit
         pool_count = self._lp.count()
         raw_data = self.rewards.epochs_latest_paginated(max_offset=pool_count)
-        return self.processor.process_epochs_latest(raw_data, tokens_df)
+        df = self.processor.process_epochs_latest(raw_data, tokens_df)
+        self._record_snapshot(df, "epochs_latest")
+        return df
 
     def get_pools_with_rewards(self, only_with_rewards: bool = True) -> pd.DataFrame:
         """
@@ -349,9 +376,68 @@ class SugarClient:
         lp_df = self.get_pools()
         epochs_df = self.get_epochs_latest()
 
-        return self.processor.combine_lp_with_rewards(
+        df = self.processor.combine_lp_with_rewards(
             lp_df, epochs_df, tokens_df, only_with_rewards=only_with_rewards
         )
+        self._record_snapshot(df, "pools_with_rewards")
+        return df
+
+    @property
+    def snapshots(self) -> SnapshotStore | None:
+        """Snapshot store (None if snapshotting was disabled)."""
+        return self._snapshots
+
+    def _record_snapshot(self, df: pd.DataFrame, dataset: str) -> None:
+        """Persist a fetched dataset to the snapshot store (best-effort)."""
+        if self._snapshots is None:
+            return
+        try:
+            self._snapshots.save(
+                df,
+                dataset=dataset,
+                chain=self._config.name.lower(),
+                block=self.block_number,
+            )
+        except Exception as exc:
+            # Snapshotting must never break a live fetch.
+            logger.warning(f"Failed to snapshot {dataset}: {exc}")
+
+    def load_snapshot(self, dataset: str, block: int | None = None) -> pd.DataFrame:
+        """
+        Load a previously snapshotted dataset for this chain.
+
+        Args:
+            dataset: Dataset name ("pools", "tokens", "ve_positions",
+                "relays", "epochs_latest", "pools_with_rewards").
+            block: Specific block to load. Defaults to the latest snapshot.
+
+        Returns:
+            The snapshotted DataFrame.
+
+        Raises:
+            FileNotFoundError: If no matching snapshot exists.
+            RuntimeError: If snapshotting was disabled for this client.
+        """
+        if self._snapshots is None:
+            raise RuntimeError("Snapshotting is disabled for this client")
+        return self._snapshots.load(dataset, self._config.name.lower(), block=block)
+
+    def snapshot_history(self, dataset: str) -> pd.DataFrame:
+        """
+        List recorded snapshots of a dataset for this chain.
+
+        Args:
+            dataset: Dataset name (see load_snapshot).
+
+        Returns:
+            DataFrame with columns block, fetched_at, rows, file.
+
+        Raises:
+            RuntimeError: If snapshotting was disabled for this client.
+        """
+        if self._snapshots is None:
+            raise RuntimeError("Snapshotting is disabled for this client")
+        return self._snapshots.history(dataset, self._config.name.lower())
 
     def export_dataframe(
         self,
@@ -369,7 +455,7 @@ class SugarClient:
         Args:
             df: DataFrame to export.
             name: Base name for the file (e.g., "pools", "tokens").
-            subdirectory: Subdirectory within export dir (default: "data").
+            subdirectory: Subdirectory within export dir (e.g., "data-pools").
             include_block: Whether to include block number in filename.
             index: Whether to include DataFrame index in output.
 

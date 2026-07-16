@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 from pathlib import Path
 from typing import Any
 
@@ -399,8 +398,7 @@ class DeploymentFetcher:
             Dictionary of chain -> contract_type -> address.
         """
         if self._addresses is None or refresh:
-            env_content = fetch_env_example()
-            self._addresses = parse_env_addresses(env_content)
+            self._addresses = fetch_all_deployments()
 
         return self._addresses
 

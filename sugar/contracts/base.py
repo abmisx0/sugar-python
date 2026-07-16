@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from web3 import Web3
 from web3.contract import Contract
@@ -34,6 +35,19 @@ def set_progress_callback(
 def get_progress_callback() -> Callable[[str, str, str, int | None], None] | None:
     """Get the current progress callback."""
     return _progress_callback
+
+
+def _clean_rpc_error(exc: Exception) -> str:
+    """Return a short, human-readable error string — strips raw ABI payload bytes."""
+    msg = str(exc)
+    # web3.py decode errors append "with return data: b'...'" — drop that part
+    cutoff = msg.find(" with return data: b'")
+    if cutoff > 0:
+        msg = msg[:cutoff] + " (raw payload omitted)"
+    # Hard-cap so nothing enormous slips through
+    if len(msg) > 300:
+        msg = msg[:300] + "..."
+    return msg
 
 
 def load_abi(name: str) -> list[dict]:
@@ -92,12 +106,17 @@ class BaseContract:
         return self._contract
 
     def _report_progress(self, method: str, offset: int | None = None) -> None:
-        """Report RPC call progress if callback is set."""
+        """Report RPC call progress — logs, or delegates to callback if set."""
+        chain = self._provider.config.name if hasattr(self._provider, "config") else "unknown"
+        sugar_type = self.SUGAR_TYPE or self.__class__.__name__
         callback = get_progress_callback()
         if callback:
-            chain = self._provider.config.name if hasattr(self._provider, "config") else "unknown"
-            sugar_type = self.SUGAR_TYPE or self.__class__.__name__
             callback(chain, sugar_type, method, offset)
+        else:
+            if offset is not None:
+                logger.info(f"RPC: {chain} | {sugar_type} | {method}(offset={offset})")
+            else:
+                logger.info(f"RPC: {chain} | {sugar_type} | {method}()")
 
     def _call(self, method: str, *args: Any, _skip_progress: bool = False) -> Any:
         """
@@ -114,7 +133,12 @@ class BaseContract:
         if not _skip_progress:
             self._report_progress(method)
         func = getattr(self._contract.functions, method)
-        return func(*args).call()
+        try:
+            result = func(*args).call()
+        except Exception as e:
+            logger.error(f"RPC ERROR: {method}(): {_clean_rpc_error(e)}")
+            raise
+        return result
 
     def _paginate(
         self,
@@ -146,15 +170,16 @@ class BaseContract:
                 result = func(limit, offset, *extra_args).call()
 
                 if not result:
+                    if not all_results:
+                        logger.warning(f"{method}() returned empty on first page")
                     break
 
                 all_results.extend(result)
                 # Increment offset by limit (pagination is index-based, not result-based)
                 offset += limit
-                logger.debug(f"{method}: fetched {len(result)} items, offset now {offset}")
 
             except Exception as e:
-                logger.warning(f"Pagination error in {method} at offset {offset}: {e}")
+                logger.error(f"RPC ERROR: {method}(offset={offset}): {_clean_rpc_error(e)}")
                 break
 
         return all_results
@@ -204,7 +229,7 @@ class BaseContract:
                 logger.debug(f"{method}: fetched {len(result)} items, next ID {offset}")
 
             except Exception as e:
-                logger.warning(f"ID pagination error in {method} at ID {offset}: {e}")
+                logger.error(f"RPC ERROR: {method}(id={offset}): {_clean_rpc_error(e)}")
                 # Reduce limit or skip ID on error
                 if current_limit > 1:
                     current_limit = max(1, current_limit // 2)

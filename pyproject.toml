@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["flit_core>=3.12"]
+build-backend = "flit_core.buildapi"
 
 [project]
 name = "sugar-python"
@@ -16,11 +16,11 @@ keywords = ["velodrome", "aerodrome", "defi", "ethereum", "web3"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
@@ -31,6 +31,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+parquet = [
+    "pyarrow>=14.0.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
@@ -42,12 +45,12 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/velodrome-finance/sugar-python"
-Documentation = "https://github.com/velodrome-finance/sugar-python#readme"
-Repository = "https://github.com/velodrome-finance/sugar-python"
+Homepage = "https://github.com/abmisx0/sugar-python"
+Documentation = "https://github.com/abmisx0/sugar-python#readme"
+Repository = "https://github.com/abmisx0/sugar-python"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/sugar"]
+[tool.flit.module]
+name = "sugar"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -98,11 +101,15 @@ ignore = [
     "B905",   # zip without explicit strict parameter
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# Test stubs and fixtures legitimately take unused arguments
+"tests/**" = ["ARG", "F841", "E731"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["sugar"]
 
 [tool.coverage.run]
-source = ["src/sugar"]
+source = ["sugar"]
 branch = true
 
 [tool.coverage.report]
