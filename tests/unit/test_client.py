@@ -211,7 +211,7 @@ class TestSugarClientDataMethods:
         mock_provider_class.return_value = MagicMock()
         mock_lp = MagicMock()
         mock_lp.tokens_paginated.return_value = [
-            ("0xtoken1", "WETH", 18, "Wrapped Ether", True, 1000),
+            ("0xtoken1", "WETH", 18, 1000, True, False),
         ]
         mock_lp_class.return_value = mock_lp
 
@@ -231,7 +231,7 @@ class TestSugarClientDataMethods:
         mock_provider_class.return_value = MagicMock()
         mock_lp = MagicMock()
         mock_lp.tokens_paginated.return_value = [
-            ("0xtoken1", "WETH", 18, "Wrapped Ether", True, 1000),
+            ("0xtoken1", "WETH", 18, 1000, True, False),
         ]
         mock_lp_class.return_value = mock_lp
 
@@ -483,7 +483,6 @@ class TestPositionsByAccount:
 class TestPandasOptional:
     """Reads must work without pandas (#7)."""
 
-    @patch("sugar.core.client.has_pandas", return_value=False)
     @patch("sugar.core.client.VeSugar")
     @patch("sugar.core.client.Web3Provider")
     @patch("sugar.core.client.LpSugar")
@@ -492,9 +491,8 @@ class TestPandasOptional:
         mock_lp_class: MagicMock,
         mock_provider_class: MagicMock,
         mock_ve_class: MagicMock,
-        mock_has_pandas: MagicMock,
     ) -> None:
-        """With pandas unavailable, get_ve_positions(df=False) builds typed dicts."""
+        """get_ve_positions(df=False) returns typed dicts with no pandas involved."""
         mock_provider_class.return_value = MagicMock()
         mock_lp_class.return_value = MagicMock()
         mock_ve = MagicMock()

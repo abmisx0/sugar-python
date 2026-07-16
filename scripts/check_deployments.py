@@ -95,8 +95,13 @@ def main() -> int:
             print(f"  ✗ {d}")
         return 1
 
-    if not errors:
-        print("All pinned addresses match canonical deployments. ✓")
+    if errors:
+        # Nothing drifted, but we couldn't verify everything — fail so a
+        # scheduled CI run doesn't go green having checked nothing.
+        print("\nCould not verify all chains (see fetch errors above).")
+        return 2
+
+    print("All pinned addresses match canonical deployments. ✓")
     return 0
 
 

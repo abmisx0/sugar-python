@@ -32,7 +32,7 @@ from sugar.services.price_provider import (
     OraclePriceSource,
     PriceProvider,
 )
-from sugar.utils.optional import has_pandas, require_pandas
+from sugar.utils.optional import require_pandas
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -323,9 +323,9 @@ class SugarClient:
             Token metadata as list[dict] (default) or a DataFrame indexed by
             address when ``df=True``.
         """
-        # Pandas-free path (only when pandas isn't available and a DataFrame
-        # wasn't requested): build typed dicts straight from raw tuples.
-        if not df and not has_pandas():
+        # df=False always returns the pandas-free typed-dict schema (consistent
+        # regardless of whether pandas is installed). df=True uses the processor.
+        if not df:
             tokens = [Token.from_tuple(t) for t in self._raw_tokens(refresh)]
             if listed_only:
                 tokens = [t for t in tokens if t.listed]
@@ -342,7 +342,7 @@ class SugarClient:
                 self._price_provider.set_tokens_df(self._tokens_df)
 
         result = self._tokens_df[self._tokens_df["listed"]] if listed_only else self._tokens_df
-        return result if df else self._records(result)
+        return result
 
     def _raw_tokens(self, refresh: bool = False) -> list[tuple]:
         """Fetch (and cache) raw token tuples — pandas-free."""
@@ -373,8 +373,10 @@ class SugarClient:
 
         raw_data = self._lp.all_paginated(filter_type=filter_type)
         result = self.processor.process_lp_all(raw_data, tokens_df)
-        self._record_snapshot(result, "pools")
-        return result if df else self._records(result)
+        if df:
+            self._record_snapshot(result, "pools")
+            return result
+        return self._records(result)
 
     def get_ve_positions(self, df: bool = False) -> list[dict] | pd.DataFrame:
         """
@@ -391,11 +393,11 @@ class SugarClient:
             ContractNotAvailableError: If VeSugar is not available.
         """
         raw_data = self.ve.all_paginated()
-        if not df and not has_pandas():
+        if not df:
             return [to_dict(VeNFT.from_tuple(t)) for t in raw_data]
         result = self.processor.process_ve_all(raw_data)
         self._record_snapshot(result, "ve_positions")
-        return result if df else self._records(result)
+        return result
 
     def get_relays(
         self, filter_inactive: bool = True, df: bool = False
@@ -415,7 +417,7 @@ class SugarClient:
             ContractNotAvailableError: If RelaySugar is not available.
         """
         raw_data = self.relay.all()
-        if not df and not has_pandas():
+        if not df:
             relays = [Relay.from_tuple(t) for t in raw_data]
             if filter_inactive:
                 relays = [r for r in relays if not r.inactive]
@@ -424,7 +426,7 @@ class SugarClient:
             raw_data, filter_inactive=filter_inactive
         )
         self._record_snapshot(result, "relays")
-        return result if df else self._records(result)
+        return result
 
     def get_epochs_latest(self, df: bool = False) -> list[dict] | pd.DataFrame:
         """
@@ -444,8 +446,10 @@ class SugarClient:
         pool_count = self._lp.count()
         raw_data = self.rewards.epochs_latest_paginated(max_offset=pool_count)
         result = self.processor.process_epochs_latest(raw_data, tokens_df)
-        self._record_snapshot(result, "epochs_latest")
-        return result if df else self._records(result)
+        if df:
+            self._record_snapshot(result, "epochs_latest")
+            return result
+        return self._records(result)
 
     def get_pools_with_rewards(
         self, only_with_rewards: bool = True, df: bool = False
@@ -485,8 +489,10 @@ class SugarClient:
         result = self.processor.combine_lp_with_rewards(
             lp_df, epochs_df, tokens_df, only_with_rewards=only_with_rewards
         )
-        self._record_snapshot(result, "pools_with_rewards")
-        return result if df else self._records(result)
+        if df:
+            self._record_snapshot(result, "pools_with_rewards")
+            return result
+        return self._records(result)
 
     def _token_amount(
         self,
@@ -562,8 +568,17 @@ class SugarClient:
                         relay_map[int(entry[0])] = (int(entry[1]), int(entry[2]))
 
             for ve in venfts:
-                if ve.managed_id != 0 and ve.id in relay_map:
-                    principal_raw, reward_raw = relay_map[ve.id]
+                if ve.managed_id != 0:
+                    # Relay-deposited: exact principal + rewards live in
+                    # RelaySugar.account_venfts. Fall back to governance_amount
+                    # (the managed veNFT balance that survives deposit) if the
+                    # relay wasn't returned for this account, so the position is
+                    # never silently dropped.
+                    if ve.id in relay_map:
+                        principal_raw, reward_raw = relay_map[ve.id]
+                    else:
+                        principal_raw = int(ve.governance_amount * (Decimal(10) ** ve.decimals))
+                        reward_raw = 0
                     kind = PositionKind.RELAY
                 else:
                     principal_raw = ve.amount_raw
@@ -617,16 +632,21 @@ class SugarClient:
                 s1, d1 = meta.get(t1.lower(), ("?", 18))
                 se, de = meta.get(emissions_token.lower(), ("?", 18))
 
-                tok0 = self._token_amount(t0, int(p[4]), d0, symbol=s0, price=price)
-                tok1 = self._token_amount(t1, int(p[5]), d1, symbol=s1, price=price)
+                # amount0/staked0 are disjoint (a staked position zeroes
+                # amount0/1 and moves the value to staked0/1), so the total
+                # underlying is amount + staked.
+                amt0 = int(p[4]) + int(p[6])
+                amt1 = int(p[5]) + int(p[7])
+                tok0 = self._token_amount(t0, amt0, d0, symbol=s0, price=price)
+                tok1 = self._token_amount(t1, amt1, d1, symbol=s1, price=price)
 
-                rewards: list[TokenAmount] = []
+                lp_rewards: list[TokenAmount] = []
                 if p[8]:
-                    rewards.append(self._token_amount(t0, int(p[8]), d0, symbol=s0, price=price))
+                    lp_rewards.append(self._token_amount(t0, int(p[8]), d0, symbol=s0, price=price))
                 if p[9]:
-                    rewards.append(self._token_amount(t1, int(p[9]), d1, symbol=s1, price=price))
+                    lp_rewards.append(self._token_amount(t1, int(p[9]), d1, symbol=s1, price=price))
                 if p[10]:
-                    rewards.append(
+                    lp_rewards.append(
                         self._token_amount(
                             emissions_token, int(p[10]), de, symbol=se, price=price
                         )
@@ -640,7 +660,7 @@ class SugarClient:
                         chain_id=chain_id,
                         kind=PositionKind.CL if pool_type > 0 else PositionKind.LP,
                         tokens=[tok0, tok1],
-                        rewards=rewards,
+                        rewards=lp_rewards,
                         pool=pool_addr,
                         usd_value=usd,
                         locked=False,
@@ -687,6 +707,7 @@ class SugarClient:
             FileNotFoundError: If no matching snapshot exists.
             RuntimeError: If snapshotting was disabled for this client.
         """
+        require_pandas()  # snapshots are stored/read via pandas
         store = self._snapshot_store()
         if store is None:
             raise RuntimeError("Snapshotting is disabled for this client")
@@ -705,6 +726,7 @@ class SugarClient:
         Raises:
             RuntimeError: If snapshotting was disabled for this client.
         """
+        require_pandas()  # snapshots are stored/read via pandas
         store = self._snapshot_store()
         if store is None:
             raise RuntimeError("Snapshotting is disabled for this client")

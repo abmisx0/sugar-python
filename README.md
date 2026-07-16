@@ -195,30 +195,34 @@ client.rewards.rewards(venft_id=123)         # Rewards for a veNFT
 
 ### Data Methods
 
-High-level methods that return processed DataFrames:
+High-level readers return `list[dict]` by default; pass `df=True` for a pandas
+DataFrame. `get_tokens`, `get_ve_positions`, and `get_relays` work without
+pandas installed; `get_pools`, `get_epochs_latest`, and `get_pools_with_rewards`
+do their pricing/analytics in pandas, so they need the `export` extra.
 
 ```python
-# Get processed DataFrames
-pools_df = client.get_pools()                # All pools
-tokens_df = client.get_tokens()              # Token metadata
-ve_df = client.get_ve_positions()            # veNFT positions
-relays_df = client.get_relays()              # Relay data
-epochs_df = client.get_epochs_latest()       # Latest epoch rewards
+tokens = client.get_tokens()                 # list[dict] (pandas-free)
+ve = client.get_ve_positions()               # list[dict] (pandas-free)
+relays = client.get_relays()                 # list[dict] (pandas-free)
 
-# Combined data with priced rewards
-combined_df = client.get_pools_with_rewards()
+pools = client.get_pools()                   # list[dict] (needs sugar[export])
+epochs = client.get_epochs_latest()          # list[dict] (needs sugar[export])
+combined = client.get_pools_with_rewards()   # list[dict] (needs sugar[export])
+
+pools_df = client.get_pools(df=True)         # pandas DataFrame
 ```
 
 ### Persistent Snapshots
 
 Sugar contracts only serve real-time state — once a block passes, the data is
-gone unless you saved it. The client therefore snapshots every fetched dataset
-to disk automatically, stamped with the block number, building a local history
-across runs:
+gone unless you saved it. When you fetch data as a DataFrame (`df=True`), the
+client snapshots it to disk automatically, stamped with the block number,
+building a local history across runs. (Snapshots are pandas-backed, so they need
+the `export` extra.)
 
 ```python
 client = SugarClient(ChainId.BASE)          # snapshots on by default
-pools = client.get_pools()                  # writes sugar-snapshots/base/pools/<block>.csv.gz
+pools = client.get_pools(df=True)           # writes sugar-snapshots/base/pools/<block>.parquet
 
 client.snapshot_history("pools")            # DataFrame: block, fetched_at, rows, file
 old = client.load_snapshot("pools")         # latest snapshot
@@ -229,11 +233,11 @@ client = SugarClient(ChainId.BASE, snapshot=False)
 client = SugarClient(ChainId.BASE, snapshot_dir="/my/archive")
 ```
 
-Snapshots are written as parquet when `pyarrow` is installed
-(`pip install -e ".[parquet]"`), otherwise as gzipped CSV. The default
-directory is `./sugar-snapshots` and can be overridden with the
-`SUGAR_SNAPSHOT_DIR` environment variable. Datasets snapshotted: `pools`,
-`tokens`, `ve_positions`, `relays`, `epochs_latest`, `pools_with_rewards`.
+Snapshots are written as parquet (via `pyarrow`, included in the `export`
+extra), falling back to gzipped CSV if parquet isn't available. The default
+directory is `./sugar-snapshots`, overridable with the `SUGAR_SNAPSHOT_DIR`
+environment variable. Datasets snapshotted: `pools`, `tokens`, `ve_positions`,
+`relays`, `epochs_latest`, `pools_with_rewards`.
 
 ### Export Methods
 
@@ -269,11 +273,12 @@ Price sources (in order):
 
 ### Combined Pools with Rewards
 
-The `get_pools_with_rewards()` method returns a DataFrame with:
+`get_pools_with_rewards()` returns rows (list[dict], or a DataFrame with
+`df=True`) combining:
 
 - **Pool data**: symbol, reserves, TVL, pool type, etc.
 - **Epoch rewards**: votes, emissions for the current epoch
-- **USD-priced columns**:
+- **USD-priced fields**:
   - `tvl_usd` - Total value locked (reserve0_usd + reserve1_usd)
   - `pool_fees_usd` - Trading fees earned (token0_fees_usd + token1_fees_usd)
   - `projected_pool_fees_usd` - Projected fees for full epoch
@@ -281,11 +286,13 @@ The `get_pools_with_rewards()` method returns a DataFrame with:
   - `gauge_fees_usd` - Gauge fees in USD
 
 ```python
-# Get combined data
-df = client.get_pools_with_rewards()
+# As a DataFrame (needs sugar[export])
+df = client.get_pools_with_rewards(df=True)
+print(df[["symbol", "tvl_usd", "incentives_usd", "gauge_fees_usd", "votes"]])
 
-# Access key columns
-print(df[['symbol', 'tvl_usd', 'incentives_usd', 'gauge_fees_usd', 'votes']])
+# Or as plain rows
+for row in client.get_pools_with_rewards():
+    print(row["symbol"], row["tvl_usd"], row["incentives_usd"])
 ```
 
 ## Supported Chains

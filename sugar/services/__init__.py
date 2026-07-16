@@ -1,6 +1,6 @@
 """Services module for Sugar Python library."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sugar.services.deployment import (
     DeploymentFetcher,
@@ -31,7 +31,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):  # PEP 562: lazy so importing this package is pandas-free
+def __getattr__(name: str) -> Any:  # PEP 562: lazy so this package import is pandas-free
     if name == "DataProcessor":
         from sugar.services.data_processor import DataProcessor
 

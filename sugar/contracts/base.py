@@ -183,6 +183,8 @@ class BaseContract:
         all_results: list[tuple] = []
         offset = start_offset
         extra_args = tuple(_checksum_addresses(a) for a in extra_args)
+        retries = 0
+        max_retries = 3  # bounded retries at the same offset for transient errors
 
         while True:
             try:
@@ -190,6 +192,7 @@ class BaseContract:
                 # Call contract directly instead of through _call to avoid double reporting
                 func = getattr(self._contract.functions, method)
                 result = func(limit, offset, *extra_args).call()
+                retries = 0
 
                 if not result:
                     if not all_results:
@@ -201,8 +204,18 @@ class BaseContract:
                 offset += limit
 
             except Exception as e:
+                retries += 1
                 logger.error(f"RPC ERROR: {method}(offset={offset}): {_clean_rpc_error(e)}")
-                break
+                if retries >= max_retries:
+                    # Do NOT silently return partial data — a truncated page set
+                    # read as complete is worse than a clear failure.
+                    from sugar.core.exceptions import PaginationError
+
+                    raise PaginationError(
+                        method,
+                        offset,
+                        f"failed after {retries} retries at offset {offset}",
+                    ) from e
 
         return all_results
 
@@ -230,11 +243,12 @@ class BaseContract:
         all_results: list[tuple] = []
         offset = start_id
         current_limit = limit
-        consecutive_failures = 0
-        # Bound to avoid an unbounded loop when the RPC is persistently failing:
-        # scattered bad IDs reset this on the next success, but a dead endpoint
-        # would otherwise climb IDs forever.
-        max_consecutive_failures = 25
+        # Count only consecutive *skips without a successful fetch* — halving
+        # retries at the same offset don't burn the budget (otherwise a couple
+        # of adjacent bad IDs would abort the whole scan). A genuinely dead RPC
+        # keeps skipping without success and trips this bound.
+        skips_without_progress = 0
+        max_skips_without_progress = 25
 
         while True:
             try:
@@ -242,7 +256,7 @@ class BaseContract:
                 # Call contract directly instead of through _call to avoid double reporting
                 func = getattr(self._contract.functions, method)
                 result = func(current_limit, offset).call()
-                consecutive_failures = 0
+                skips_without_progress = 0
 
                 if not result:
                     break
@@ -257,23 +271,25 @@ class BaseContract:
                 logger.debug(f"{method}: fetched {len(result)} items, next ID {offset}")
 
             except Exception as e:
-                consecutive_failures += 1
                 logger.error(f"RPC ERROR: {method}(id={offset}): {_clean_rpc_error(e)}")
-                if consecutive_failures >= max_consecutive_failures:
-                    from sugar.core.exceptions import PaginationError
-
-                    raise PaginationError(
-                        method,
-                        offset,
-                        f"aborted after {consecutive_failures} consecutive failures",
-                    ) from e
-                # Reduce limit or skip ID on error
+                # Reduce limit (retry same offset, doesn't count as a skip) or,
+                # once at limit 1, skip the offending ID.
                 if current_limit > 1:
                     current_limit = max(1, current_limit // 2)
                     logger.info(f"Reducing limit to {current_limit}")
                 else:
                     offset += 1
                     current_limit = limit
+                    skips_without_progress += 1
                     logger.info(f"Skipping to ID {offset}")
+                    if skips_without_progress >= max_skips_without_progress:
+                        from sugar.core.exceptions import PaginationError
+
+                        raise PaginationError(
+                            method,
+                            offset,
+                            f"aborted after {skips_without_progress} consecutive "
+                            "skips without progress",
+                        ) from e
 
         return all_results
