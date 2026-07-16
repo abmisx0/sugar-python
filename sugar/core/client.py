@@ -17,7 +17,14 @@ from sugar.contracts.rewards_sugar import RewardsSugar
 from sugar.contracts.ve_sugar import VeSugar
 from sugar.core.exceptions import ContractNotAvailableError
 from sugar.core.web3_provider import Web3Provider
-from sugar.models import AccountPosition, PositionKind, TokenAmount, VeNFT
+from sugar.models import (
+    AccountPosition,
+    ChainError,
+    Portfolio,
+    PositionKind,
+    TokenAmount,
+    VeNFT,
+)
 from sugar.services.data_processor import DataProcessor
 from sugar.services.export import ExportService
 from sugar.services.price_provider import (
@@ -668,3 +675,47 @@ class SugarClient:
             filename = f"{name}_{chain}.csv"
 
         return self._export.to_csv(df, filename, subdirectory=subdirectory, index=index)
+
+
+def positions_across_chains(
+    account: str,
+    chains: list[ChainId] | None = None,
+    rpc_urls: dict[ChainId, str] | None = None,
+    price: bool = True,
+) -> Portfolio:
+    """
+    Aggregate an account's positions across multiple chains.
+
+    Runs :meth:`SugarClient.positions_by_account` per chain and returns a
+    :class:`~sugar.models.Portfolio` with whatever succeeded plus per-chain
+    errors — a single unreachable RPC degrades gracefully instead of failing the
+    whole call.
+
+    Args:
+        account: Wallet address (any case).
+        chains: Chains to query. Defaults to all supported chains.
+        rpc_urls: Optional per-chain RPC URL overrides (falls back to env vars).
+        price: Whether to attach USD prices.
+
+    Returns:
+        Portfolio(positions=[...], errors=[...]).
+    """
+    if chains is None:
+        chains = list(ChainId)
+    rpc_urls = rpc_urls or {}
+
+    positions: list[AccountPosition] = []
+    errors: list[ChainError] = []
+    for chain in chains:
+        try:
+            client = SugarClient(chain, rpc_url=rpc_urls.get(chain), snapshot=False)
+            positions.extend(client.positions_by_account(account, price=price))
+        except Exception as exc:  # per-chain isolation
+            errors.append(
+                ChainError(
+                    chain=chain.name,
+                    chain_id=chain.value,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            )
+    return Portfolio(positions=positions, errors=errors)

@@ -56,6 +56,31 @@ client.export_dataframe(client.get_tokens(df=True), "tokens", include_block=Fals
 > a DataFrame. Add `df=True` to any call to restore the old behavior. See
 > [CHANGELOG.md](CHANGELOG.md).
 
+### An account's entire footprint (portfolio)
+
+`positions_by_account` returns a wallet's veNFT locks and LP/CL positions as one
+normalized, priced list — Relay/managed-veNFT principal resolved, each token with
+raw + human amount, USD price, and price source:
+
+```python
+from sugar import SugarClient, ChainId, to_dict
+
+client = SugarClient(ChainId.BASE)
+positions = client.positions_by_account("0x…")          # list[AccountPosition]
+total_usd = sum(p.usd_value for p in positions)
+rows = [to_dict(p) for p in positions]                   # JSON-friendly dicts
+```
+
+Across chains in one call, with graceful per-chain degradation:
+
+```python
+from sugar import positions_across_chains, ChainId
+
+portfolio = positions_across_chains("0x…", chains=[ChainId.BASE, ChainId.OPTIMISM, ChainId.INK])
+print(portfolio.usd_value)     # total across all chains
+print(portfolio.errors)        # any chains that failed (e.g. RPC down) — not raised
+```
+
 ### Providing an RPC endpoint
 
 Pass `rpc_url` directly — handy when you already derive RPC URLs from an

@@ -42,6 +42,14 @@ client.export_dataframe(client.get_pools(df=True), "pools")
 
 ### Added
 
+- **`positions_by_account(account)`** — an account's entire footprint on a chain
+  as one normalized, priced, typed list (`list[AccountPosition]`): veNFT locks
+  (with Relay/managed-veNFT principal resolved from `RelaySugar.account_venfts`)
+  and LP/concentrated-liquidity positions. Every token carries raw + human
+  amount, `price_usd`, and `price_source`.
+- **`positions_across_chains(account, chains=...)`** — the same across multiple
+  chains, returning a `Portfolio(positions, errors)`; a single unreachable RPC
+  degrades gracefully (surfaced in `errors`) instead of failing the whole call.
 - **Typed dataclass models** (`sugar.models`): `TokenAmount` (raw + human
   amount, `price_usd`, `price_source`, derived `usd`), `Token`, `VeNFT`
   (`in_relay`), `Relay`, `AccountPosition`, `PositionKind`, and `to_dict()` for

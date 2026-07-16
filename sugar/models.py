@@ -210,6 +210,32 @@ class AccountPosition:
     meta: dict = field(default_factory=dict)  # kind-specific extras (venft id, expiry, ...)
 
 
+@dataclass(slots=True)
+class ChainError:
+    """A per-chain failure captured during a multi-chain query."""
+
+    chain: str
+    chain_id: int
+    error: str
+
+
+@dataclass(slots=True)
+class Portfolio:
+    """Result of a multi-chain positions query.
+
+    Holds whatever succeeded (``positions``) plus per-chain failures
+    (``errors``) so one unreachable RPC never sinks the whole call.
+    """
+
+    positions: list[AccountPosition] = field(default_factory=list)
+    errors: list[ChainError] = field(default_factory=list)
+
+    @property
+    def usd_value(self) -> Decimal:
+        """Total USD across all positions that were priced."""
+        return sum((p.usd_value for p in self.positions), Decimal(0))
+
+
 def to_dict(obj: object) -> object:
     """Recursively convert dataclasses/enums to plain (JSON-friendly) structures.
 

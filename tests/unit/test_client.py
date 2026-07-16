@@ -480,6 +480,39 @@ class TestPositionsByAccount:
         assert p.meta["venft_id"] == 100
 
 
+class TestPositionsAcrossChains:
+    """Test multi-chain aggregation with graceful degradation (#9)."""
+
+    @patch("sugar.core.client.SugarClient")
+    def test_partial_results_when_one_chain_fails(self, mock_client_cls: MagicMock) -> None:
+        from decimal import Decimal
+
+        from sugar.core.client import positions_across_chains
+        from sugar.models import AccountPosition, PositionKind
+
+        good = AccountPosition(
+            protocol="velodrome", chain="Optimism", chain_id=10,
+            kind=PositionKind.VE, usd_value=Decimal(5), locked=True,
+        )
+
+        def side_effect(chain: ChainId, rpc_url: str | None = None, snapshot: bool = False):
+            if chain == ChainId.BASE:
+                raise RuntimeError("RPC down")
+            inst = MagicMock()
+            inst.positions_by_account.return_value = [good]
+            return inst
+
+        mock_client_cls.side_effect = side_effect
+
+        result = positions_across_chains("0xacc", chains=[ChainId.BASE, ChainId.OPTIMISM])
+
+        assert len(result.positions) == 1           # OP succeeded
+        assert result.usd_value == Decimal(5)
+        assert len(result.errors) == 1              # Base failure surfaced, not raised
+        assert result.errors[0].chain == "BASE"
+        assert "RPC down" in result.errors[0].error
+
+
 class TestSugarClientExportMethods:
     """Test export methods."""
 
