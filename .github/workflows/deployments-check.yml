@@ -1,0 +1,27 @@
+name: Deployment address drift
+
+# Detects when pinned Sugar contract addresses fall behind the canonical
+# velodrome-finance/sugar deployments. Pinned addresses stay authoritative in
+# the repo; this only alerts when an upstream redeploy makes a pin stale.
+
+on:
+  schedule:
+    - cron: "0 12 * * 1"  # weekly, Mondays 12:00 UTC
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - "sugar/config/chains.py"
+      - "scripts/check_deployments.py"
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e .
+      - name: Check deployment addresses
+        run: python scripts/check_deployments.py
