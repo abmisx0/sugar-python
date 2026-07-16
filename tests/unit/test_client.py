@@ -216,7 +216,7 @@ class TestSugarClientDataMethods:
         mock_lp_class.return_value = mock_lp
 
         client = SugarClient(ChainId.BASE)
-        tokens = client.get_tokens()
+        tokens = client.get_tokens(df=True)
 
         assert isinstance(tokens, pd.DataFrame)
 
@@ -316,10 +316,29 @@ class TestSugarClientGetMethods:
         mock_lp_class.return_value = mock_lp
 
         client = SugarClient(ChainId.BASE)
-        result = client.get_pools()
+        result = client.get_pools(df=True)
 
         assert isinstance(result, pd.DataFrame)
         mock_lp.all_paginated.assert_called_once()
+
+    @patch("sugar.core.client.Web3Provider")
+    @patch("sugar.core.client.LpSugar")
+    def test_get_pools_returns_list_of_dicts_by_default(
+        self,
+        mock_lp_class: MagicMock,
+        mock_provider_class: MagicMock,
+    ) -> None:
+        """get_pools should default to list[dict]."""
+        mock_provider_class.return_value = MagicMock()
+        mock_lp = MagicMock()
+        mock_lp.tokens_paginated.return_value = []
+        mock_lp.all_paginated.return_value = []
+        mock_lp_class.return_value = mock_lp
+
+        client = SugarClient(ChainId.BASE)
+        result = client.get_pools()
+
+        assert isinstance(result, list)
 
     @patch("sugar.core.client.VeSugar")
     @patch("sugar.core.client.Web3Provider")
@@ -338,7 +357,7 @@ class TestSugarClientGetMethods:
         mock_ve_class.return_value = mock_ve
 
         client = SugarClient(ChainId.BASE)
-        result = client.get_ve_positions()
+        result = client.get_ve_positions(df=True)
 
         assert isinstance(result, pd.DataFrame)
         mock_ve.all_paginated.assert_called_once()
@@ -360,7 +379,7 @@ class TestSugarClientGetMethods:
         mock_relay_class.return_value = mock_relay
 
         client = SugarClient(ChainId.BASE)
-        result = client.get_relays()
+        result = client.get_relays(df=True)
 
         assert isinstance(result, pd.DataFrame)
         mock_relay.all.assert_called_once()
@@ -385,7 +404,7 @@ class TestSugarClientGetMethods:
         mock_rewards_class.return_value = mock_rewards
 
         client = SugarClient(ChainId.BASE)
-        result = client.get_epochs_latest()
+        result = client.get_epochs_latest(df=True)
 
         assert isinstance(result, pd.DataFrame)
         mock_rewards.epochs_latest_paginated.assert_called_once()

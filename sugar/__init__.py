@@ -20,7 +20,7 @@ from sugar.models import (
 from sugar.services.snapshot import SnapshotStore
 from sugar.utils.logging import setup_logging
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "SugarClient",
     "ChainId",

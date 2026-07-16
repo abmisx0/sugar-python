@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "sugar-python"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python library for Velodrome/Aerodrome Sugar Protocol"
 readme = "README.md"
 license = "GPL-3.0-or-later"

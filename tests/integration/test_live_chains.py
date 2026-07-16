@@ -66,13 +66,14 @@ class TestBaseChain:
 
     def test_tokens_fetch(self, base_client: SugarClient) -> None:
         """Should fetch tokens."""
-        tokens = base_client.get_tokens()
+        tokens = base_client.get_tokens(df=True)
         assert isinstance(tokens, pd.DataFrame)
         assert len(tokens) > 0
+        assert isinstance(base_client.get_tokens(), list)
 
     def test_pools_fetch(self, base_client: SugarClient) -> None:
         """Should fetch pools."""
-        pools = base_client.get_pools()
+        pools = base_client.get_pools(df=True)
         assert isinstance(pools, pd.DataFrame)
         assert len(pools) > 0
 
@@ -92,7 +93,7 @@ class TestBaseChain:
 
     def test_relay_fetch(self, base_client: SugarClient) -> None:
         """Should fetch relay data."""
-        relays = base_client.get_relays()
+        relays = base_client.get_relays(df=True)
         assert isinstance(relays, pd.DataFrame)
 
     def test_rewards_available(self, base_client: SugarClient) -> None:
@@ -141,7 +142,7 @@ class TestCombinedData:
 
         This test may be slow as it fetches all pool and reward data.
         """
-        combined = base_client.get_pools_with_rewards()
+        combined = base_client.get_pools_with_rewards(df=True)
         assert isinstance(combined, pd.DataFrame)
         assert len(combined) > 0
 

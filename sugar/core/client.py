@@ -252,100 +252,126 @@ class SugarClient:
             defillama=defillama_source,
         )
 
+    @staticmethod
+    def _records(df: pd.DataFrame) -> list[dict]:
+        """Convert a DataFrame to a list of plain dicts (JSON-friendly).
+
+        A named/multi index (e.g. address, id, venft_id) is folded back in as a
+        column so no data is lost; an anonymous RangeIndex is dropped.
+        """
+        if df.index.name is not None or isinstance(df.index, pd.MultiIndex):
+            df = df.reset_index()
+        return df.to_dict("records")
+
     def get_tokens(
-        self, listed_only: bool = True, refresh: bool = False
-    ) -> pd.DataFrame:
+        self, listed_only: bool = True, refresh: bool = False, df: bool = False
+    ) -> list[dict] | pd.DataFrame:
         """
         Get token metadata.
 
         Args:
             listed_only: Whether to filter for listed tokens only.
             refresh: Whether to refresh cached data.
+            df: If True, return a pandas DataFrame; otherwise a list[dict].
 
         Returns:
-            DataFrame with token metadata indexed by address.
+            Token metadata as list[dict] (default) or a DataFrame indexed by
+            address when ``df=True``.
         """
         if self._tokens_df is None or refresh:
             raw_data = self._lp.tokens_paginated()
             self._tokens_df = self.processor.process_tokens(raw_data, listed_only=False)
             self._record_snapshot(self._tokens_df, "tokens")
 
-        if listed_only:
-            return self._tokens_df[self._tokens_df["listed"]]
-        return self._tokens_df
+        result = self._tokens_df[self._tokens_df["listed"]] if listed_only else self._tokens_df
+        return result if df else self._records(result)
 
-    def get_pools(self, filter_type: int = 0) -> pd.DataFrame:
+    def get_pools(self, filter_type: int = 0, df: bool = False) -> list[dict] | pd.DataFrame:
         """
         Get all liquidity pools.
 
         Args:
             filter_type: Filter type (0 = all, 1 = v2 only, 2 = CL only).
+            df: If True, return a pandas DataFrame; otherwise a list[dict].
 
         Returns:
-            DataFrame with pool data.
+            Pool data as list[dict] (default) or a DataFrame when ``df=True``.
         """
         # Ensure tokens are loaded for symbol lookup
-        tokens_df = self.get_tokens(listed_only=False)
+        tokens_df = self.get_tokens(listed_only=False, df=True)
 
         raw_data = self._lp.all_paginated(filter_type=filter_type)
-        df = self.processor.process_lp_all(raw_data, tokens_df)
-        self._record_snapshot(df, "pools")
-        return df
+        result = self.processor.process_lp_all(raw_data, tokens_df)
+        self._record_snapshot(result, "pools")
+        return result if df else self._records(result)
 
-    def get_ve_positions(self) -> pd.DataFrame:
+    def get_ve_positions(self, df: bool = False) -> list[dict] | pd.DataFrame:
         """
         Get all veNFT positions.
 
+        Args:
+            df: If True, return a pandas DataFrame; otherwise a list[dict].
+
         Returns:
-            DataFrame with veNFT data indexed by ID.
+            veNFT data as list[dict] (default) or a DataFrame indexed by ID
+            when ``df=True``.
 
         Raises:
             ContractNotAvailableError: If VeSugar is not available.
         """
         raw_data = self.ve.all_paginated()
-        df = self.processor.process_ve_all(raw_data)
-        self._record_snapshot(df, "ve_positions")
-        return df
+        result = self.processor.process_ve_all(raw_data)
+        self._record_snapshot(result, "ve_positions")
+        return result if df else self._records(result)
 
-    def get_relays(self, filter_inactive: bool = True) -> pd.DataFrame:
+    def get_relays(
+        self, filter_inactive: bool = True, df: bool = False
+    ) -> list[dict] | pd.DataFrame:
         """
         Get all relay data.
 
         Args:
             filter_inactive: Whether to filter out inactive relays.
+            df: If True, return a pandas DataFrame; otherwise a list[dict].
 
         Returns:
-            DataFrame with relay data indexed by venft_id.
+            Relay data as list[dict] (default) or a DataFrame indexed by
+            venft_id when ``df=True``.
 
         Raises:
             ContractNotAvailableError: If RelaySugar is not available.
         """
         raw_data = self.relay.all()
-        df = self.processor.process_relay_all(
+        result = self.processor.process_relay_all(
             raw_data, filter_inactive=filter_inactive
         )
-        self._record_snapshot(df, "relays")
-        return df
+        self._record_snapshot(result, "relays")
+        return result if df else self._records(result)
 
-    def get_epochs_latest(self) -> pd.DataFrame:
+    def get_epochs_latest(self, df: bool = False) -> list[dict] | pd.DataFrame:
         """
         Get latest epoch rewards for all pools.
 
+        Args:
+            df: If True, return a pandas DataFrame; otherwise a list[dict].
+
         Returns:
-            DataFrame with epoch data.
+            Epoch data as list[dict] (default) or a DataFrame when ``df=True``.
 
         Raises:
             ContractNotAvailableError: If RewardsSugar is not available.
         """
-        tokens_df = self.get_tokens(listed_only=False)
+        tokens_df = self.get_tokens(listed_only=False, df=True)
         # Use pool count to inform pagination limit
         pool_count = self._lp.count()
         raw_data = self.rewards.epochs_latest_paginated(max_offset=pool_count)
-        df = self.processor.process_epochs_latest(raw_data, tokens_df)
-        self._record_snapshot(df, "epochs_latest")
-        return df
+        result = self.processor.process_epochs_latest(raw_data, tokens_df)
+        self._record_snapshot(result, "epochs_latest")
+        return result if df else self._records(result)
 
-    def get_pools_with_rewards(self, only_with_rewards: bool = True) -> pd.DataFrame:
+    def get_pools_with_rewards(
+        self, only_with_rewards: bool = True, df: bool = False
+    ) -> list[dict] | pd.DataFrame:
         """
         Get combined LP and epoch rewards data with priced fees and incentives.
 
@@ -365,22 +391,24 @@ class SugarClient:
             only_with_rewards: If True (default), only include pools that have
                 epoch rewards data. This is faster as it reduces the number of
                 pools to process. If False, include all pools.
+            df: If True, return a pandas DataFrame; otherwise a list[dict].
 
         Returns:
-            Combined DataFrame with pool info and priced rewards.
+            Combined pool info + priced rewards as list[dict] (default) or a
+            DataFrame when ``df=True``.
 
         Raises:
             ContractNotAvailableError: If RewardsSugar is not available.
         """
-        tokens_df = self.get_tokens(listed_only=True)
-        lp_df = self.get_pools()
-        epochs_df = self.get_epochs_latest()
+        tokens_df = self.get_tokens(listed_only=True, df=True)
+        lp_df = self.get_pools(df=True)
+        epochs_df = self.get_epochs_latest(df=True)
 
-        df = self.processor.combine_lp_with_rewards(
+        result = self.processor.combine_lp_with_rewards(
             lp_df, epochs_df, tokens_df, only_with_rewards=only_with_rewards
         )
-        self._record_snapshot(df, "pools_with_rewards")
-        return df
+        self._record_snapshot(result, "pools_with_rewards")
+        return result if df else self._records(result)
 
     @property
     def snapshots(self) -> SnapshotStore | None:

@@ -8,8 +8,8 @@ Python library for interacting with Velodrome/Aerodrome Sugar Protocol contracts
 - **Full contract coverage**: LpSugar, VeSugar, RelaySugar, RewardsSugar
 - **Price integration**: On-chain oracle with CoinGecko and DefiLlama fallbacks
 - **Persistent snapshots**: Every fetch is automatically indexed to disk for posterity (Sugar contracts only serve real-time data)
-- **Type safety**: Full type hints and py.typed marker
-- **Pandas integration**: All data returned as DataFrames
+- **Type safety**: Full type hints, py.typed marker, and typed dataclass models
+- **Dict-first, pandas-optional**: readers return `list[dict]` by default; pass `df=True` for a DataFrame
 - **Automatic pagination**: Handles large datasets automatically
 
 ## Requirements
@@ -39,19 +39,22 @@ from sugar import SugarClient, ChainId
 # RPC comes from the constructor (recommended) or the RPC_LINK_<CHAIN> env var
 client = SugarClient(ChainId.BASE, rpc_url="https://base-mainnet.example/<key>")
 
-# Get all liquidity pools
-pools = client.get_pools()
-
-# Get token metadata
-tokens = client.get_tokens()
-
-# Get combined pools with rewards (fees + incentives priced in USD)
+# Readers return list[dict] by default (JSON-friendly, no pandas needed)
+pools = client.get_pools()               # list[dict]
+tokens = client.get_tokens()             # list[dict]
 combined = client.get_pools_with_rewards()
 
-# Export any DataFrame to CSV
-client.export_dataframe(pools, "pools")
-client.export_dataframe(tokens, "tokens", include_block=False)
+# Prefer a pandas DataFrame? Pass df=True
+pools_df = client.get_pools(df=True)     # DataFrame
+
+# Export a DataFrame to CSV (pair with df=True)
+client.export_dataframe(client.get_pools(df=True), "pools")
+client.export_dataframe(client.get_tokens(df=True), "tokens", include_block=False)
 ```
+
+> **Upgrading from 0.1.x?** Readers now return `list[dict]` by default instead of
+> a DataFrame. Add `df=True` to any call to restore the old behavior. See
+> [CHANGELOG.md](CHANGELOG.md).
 
 ### Providing an RPC endpoint
 
@@ -66,15 +69,19 @@ If `rpc_url` is omitted, the client falls back to the chain's environment
 variable (e.g. `RPC_LINK_BASE`), loaded from `.env`. See
 [Configuration](#configuration).
 
-### Plain dicts instead of DataFrames
+### Plain dicts vs DataFrames
 
-Every reader returns a pandas DataFrame. To hand data to a non-pandas pipeline,
-convert to plain records:
+Readers return `list[dict]` by default — JSON-friendly and pandas-free, ideal
+for merging into your own pipeline:
 
 ```python
-pools = client.get_pools_with_rewards()
-rows = pools.reset_index().to_dict("records")   # list[dict], JSON-serializable
+rows = client.get_pools_with_rewards()   # list[dict]
 ```
+
+Pass `df=True` on any reader to get a pandas DataFrame instead. Typed dataclass
+models are also available (`from sugar import Token, VeNFT, Relay, TokenAmount`)
+for callers who prefer attribute access; `to_dict()` converts them to plain
+dicts.
 
 ### Read-only guarantee
 
