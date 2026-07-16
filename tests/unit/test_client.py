@@ -480,6 +480,38 @@ class TestPositionsByAccount:
         assert p.meta["venft_id"] == 100
 
 
+class TestPandasOptional:
+    """Reads must work without pandas (#7)."""
+
+    @patch("sugar.core.client.has_pandas", return_value=False)
+    @patch("sugar.core.client.VeSugar")
+    @patch("sugar.core.client.Web3Provider")
+    @patch("sugar.core.client.LpSugar")
+    def test_get_ve_positions_pandas_free(
+        self,
+        mock_lp_class: MagicMock,
+        mock_provider_class: MagicMock,
+        mock_ve_class: MagicMock,
+        mock_has_pandas: MagicMock,
+    ) -> None:
+        """With pandas unavailable, get_ve_positions(df=False) builds typed dicts."""
+        mock_provider_class.return_value = MagicMock()
+        mock_lp_class.return_value = MagicMock()
+        mock_ve = MagicMock()
+        mock_ve.all_paginated.return_value = [
+            (7, "0xacc", 18, 3 * 10**18, 0, 0, 0, 0, 0, [], "0xtok", False, 0, 0)
+        ]
+        mock_ve_class.return_value = mock_ve
+
+        client = SugarClient(ChainId.BASE)
+        result = client.get_ve_positions()  # df=False default, pandas blocked
+
+        assert isinstance(result, list)
+        assert result[0]["id"] == 7
+        assert str(result[0]["amount"]) == "3"  # typed dataclass field, scaled
+        assert "governance_amount" in result[0]
+
+
 class TestPositionsAcrossChains:
     """Test multi-chain aggregation with graceful degradation (#9)."""
 

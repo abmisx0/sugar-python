@@ -138,6 +138,7 @@ class OraclePriceSource:
         usdc_address: str | None = None,
         tokens_df: pd.DataFrame | None = None,
         chain_id: int | None = None,
+        token_decimals: dict[str, int] | None = None,
     ) -> None:
         """
         Initialize oracle price source.
@@ -147,11 +148,18 @@ class OraclePriceSource:
             usdc_address: USDC address on this chain for USD conversion.
             tokens_df: Optional token metadata DataFrame with decimals column.
             chain_id: Numeric chain ID (used for chain-aware alias resolution).
+            token_decimals: Optional pandas-free {address: decimals} map (takes
+                precedence over tokens_df; lets the oracle price non-18-decimal
+                tokens without requiring pandas).
         """
         self._oracle = oracle
         self._usdc_address = usdc_address
         self._tokens_df = tokens_df
-        self._decimals_by_addr: dict[str, int] | None = None
+        self._decimals_by_addr: dict[str, int] | None = (
+            {k.lower(): int(v) for k, v in token_decimals.items()}
+            if token_decimals is not None
+            else None
+        )
         self._chain_id = chain_id
         # Cache for individual token prices (ETH-denominated)
         self._eth_price_cache: dict[str, Decimal] = {}
@@ -251,16 +259,17 @@ class OraclePriceSource:
         if addr_lower in self.KNOWN_DECIMALS:
             return self.KNOWN_DECIMALS[addr_lower]
 
-        # Check tokens DataFrame if available (case-insensitive; the index case
-        # from get_tokens may differ from addresses passed in from pool data).
-        if self._tokens_df is not None:
-            if self._decimals_by_addr is None:
-                self._decimals_by_addr = {
-                    str(idx).lower(): int(dec)
-                    for idx, dec in self._tokens_df["decimals"].items()
-                }
-            if addr_lower in self._decimals_by_addr:
-                return self._decimals_by_addr[addr_lower]
+        # Build the decimals map lazily from a DataFrame if that's all we were
+        # given (a dict set via set_token_decimals takes precedence and is the
+        # pandas-free path). Case-insensitive: index case from get_tokens may
+        # differ from addresses passed in from pool data.
+        if self._decimals_by_addr is None and self._tokens_df is not None:
+            self._decimals_by_addr = {
+                str(idx).lower(): int(dec)
+                for idx, dec in self._tokens_df["decimals"].items()
+            }
+        if self._decimals_by_addr and addr_lower in self._decimals_by_addr:
+            return self._decimals_by_addr[addr_lower]
 
         # Default to 18 decimals
         return 18
@@ -296,6 +305,14 @@ class OraclePriceSource:
         """
         self._tokens_df = tokens_df
         self._decimals_by_addr = None  # invalidate cached decimals map
+
+    def set_token_decimals(self, mapping: dict[str, int]) -> None:
+        """Set token decimals directly (pandas-free path).
+
+        Args:
+            mapping: {token address: decimals}.
+        """
+        self._decimals_by_addr = {k.lower(): int(v) for k, v in mapping.items()}
 
     def get_price_usd(self, token_address: str) -> Decimal | None:
         """Get token price in USD via oracle (uses cache)."""
@@ -617,6 +634,11 @@ class PriceProvider:
         """
         if self._oracle is not None:
             self._oracle.set_tokens_df(tokens_df)
+
+    def set_token_decimals(self, mapping: dict[str, int]) -> None:
+        """Set token decimals on the oracle source (pandas-free path)."""
+        if self._oracle is not None:
+            self._oracle.set_token_decimals(mapping)
 
     def prefetch_prices(self, token_addresses: list[str]) -> None:
         """

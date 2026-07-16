@@ -28,8 +28,10 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pandas as pd
+if TYPE_CHECKING:
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +150,8 @@ class SnapshotStore:
         return path
 
     def _read_manifest(self, manifest: Path) -> pd.DataFrame:
+        import pandas as pd
+
         if not manifest.exists():
             return pd.DataFrame(columns=["block", "fetched_at", "rows", "file"])
         records = []
@@ -221,6 +225,8 @@ class SnapshotStore:
                     f"chain={chain!r} (available: {sorted(hist['block'])})"
                 )
             row = match.iloc[0]
+
+        import pandas as pd
 
         path = self._dataset_dir(dataset, chain) / str(row["file"])
         if path.suffix == ".parquet":

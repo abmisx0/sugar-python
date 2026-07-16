@@ -22,14 +22,19 @@ Python library for interacting with Velodrome/Aerodrome Sugar Protocol contracts
 ```bash
 git clone https://github.com/abmisx0/sugar-python.git
 cd sugar-python
-pip install -e .
-cp .env.example .env     # then edit .env with your RPC endpoints
+pip install -e ".[export]"   # [export] adds pandas for DataFrames/CSV/snapshots
+cp .env.example .env         # then edit .env with your RPC endpoints
 python examples/export_pools.py
 ```
 
 This exports token metadata and pool data for Base under `output/`, and writes
 block-stamped snapshots to `sugar-snapshots/`. See [EXPORTS.md](EXPORTS.md) for
 the snapshot layout and the other example scripts.
+
+> **pandas is optional.** `pip install sugar-python` gives you the typed/dict
+> reads and `positions_by_account` with no pandas. Add the `export` extra
+> (`pip install 'sugar-python[export]'`) for DataFrame returns (`df=True`),
+> `export_dataframe`, and snapshots.
 
 ## Quick Start
 

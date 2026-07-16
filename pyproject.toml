@@ -25,16 +25,21 @@ classifiers = [
 ]
 dependencies = [
     "web3>=6.0.0",
-    "pandas>=2.0.0",
     "python-dotenv>=1.0.0",
     "requests>=2.28.0",
 ]
 
 [project.optional-dependencies]
-parquet = [
+# DataFrame returns (df=True), CSV export, and snapshots need pandas (+pyarrow
+# for parquet snapshots). Core reads (typed/dict) and positions_by_account work
+# without these.
+export = [
+    "pandas>=2.0.0",
     "pyarrow>=14.0.0",
 ]
 dev = [
+    "pandas>=2.0.0",
+    "pyarrow>=14.0.0",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "pytest-asyncio>=0.21.0",

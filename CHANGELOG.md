@@ -40,6 +40,15 @@ df = client.get_pools_with_rewards(df=True)
 client.export_dataframe(client.get_pools(df=True), "pools")
 ```
 
+### pandas is now optional
+
+pandas moved from a hard dependency to the **`export`** extra. `import sugar`,
+the typed/dict reads (`get_*` with `df=False`), `positions_by_account`, and
+`positions_across_chains` all work without pandas installed. Install
+`pip install 'sugar-python[export]'` for DataFrame returns (`df=True`),
+`export_dataframe`, and snapshots — these raise a clear error if the extra is
+missing.
+
 ### Added
 
 - **`positions_by_account(account)`** — an account's entire footprint on a chain

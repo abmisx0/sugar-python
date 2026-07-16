@@ -7,8 +7,6 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pandas as pd
-
 from sugar.config.chains import ChainConfig, ChainId, get_chain_config
 from sugar.contracts.lp_sugar import LpSugar
 from sugar.contracts.price_oracle import SpotPriceOracle
@@ -22,21 +20,26 @@ from sugar.models import (
     ChainError,
     Portfolio,
     PositionKind,
+    Relay,
+    Token,
     TokenAmount,
     VeNFT,
+    to_dict,
 )
-from sugar.services.data_processor import DataProcessor
-from sugar.services.export import ExportService
 from sugar.services.price_provider import (
     CoinGeckoPriceSource,
     DefiLlamaPriceSource,
     OraclePriceSource,
     PriceProvider,
 )
-from sugar.services.snapshot import SnapshotStore
+from sugar.utils.optional import has_pandas, require_pandas
 
 if TYPE_CHECKING:
-    pass
+    import pandas as pd
+
+    from sugar.services.data_processor import DataProcessor
+    from sugar.services.export import ExportService
+    from sugar.services.snapshot import SnapshotStore
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +90,15 @@ class SugarClient:
         """
         self._config = get_chain_config(chain)
         self._provider = Web3Provider(self._config, rpc_url=rpc_url)
-        self._export = ExportService(export_dir)
-        self._snapshots = SnapshotStore(snapshot_dir) if snapshot else None
+
+        # Export / snapshot are pandas-backed and constructed lazily so that
+        # pandas-free reads (typed/dict, positions_by_account) never import it.
+        self._export_dir = export_dir
+        self._snapshot_enabled = snapshot
+        self._snapshot_dir = snapshot_dir
+        self._export: ExportService | None = None
+        self._snapshots: SnapshotStore | None = None
+        self._snapshots_init = False
 
         # Initialize LP Sugar (always available)
         self._lp = LpSugar(
@@ -106,7 +116,8 @@ class SugarClient:
         self._data_processor: DataProcessor | None = None
 
         # Cached data
-        self._tokens_df: pd.DataFrame | None = None
+        self._tokens_raw: list[tuple] | None = None  # pandas-free token cache
+        self._tokens_df: pd.DataFrame | None = None  # built lazily for df=True
 
         logger.info(f"SugarClient initialized for {self._config.name}")
 
@@ -198,10 +209,33 @@ class SugarClient:
 
     @property
     def processor(self) -> DataProcessor:
-        """Data processor service."""
+        """Data processor service (pandas-backed; imported lazily)."""
         if self._data_processor is None:
+            require_pandas()  # clear error if the export extra isn't installed
+            from sugar.services.data_processor import DataProcessor
+
             self._data_processor = DataProcessor(self.prices, self._provider)
         return self._data_processor
+
+    def _export_service(self) -> ExportService:
+        """Lazily construct the pandas-backed export service."""
+        if self._export is None:
+            require_pandas()  # clear error if the export extra isn't installed
+            from sugar.services.export import ExportService
+
+            self._export = ExportService(self._export_dir)
+        return self._export
+
+    def _snapshot_store(self) -> SnapshotStore | None:
+        """Lazily construct the snapshot store (pandas-backed)."""
+        if self._snapshots_init:
+            return self._snapshots
+        self._snapshots_init = True
+        if self._snapshot_enabled:
+            from sugar.services.snapshot import SnapshotStore
+
+            self._snapshots = SnapshotStore(self._snapshot_dir)
+        return self._snapshots
 
     def has_ve(self) -> bool:
         """Check if VeSugar is available on this chain."""
@@ -268,6 +302,8 @@ class SugarClient:
         A named/multi index (e.g. address, id, venft_id) is folded back in as a
         column so no data is lost; an anonymous RangeIndex is dropped.
         """
+        import pandas as pd
+
         if df.index.name is not None or isinstance(df.index, pd.MultiIndex):
             df = df.reset_index()
         return df.to_dict("records")
@@ -287,8 +323,16 @@ class SugarClient:
             Token metadata as list[dict] (default) or a DataFrame indexed by
             address when ``df=True``.
         """
+        # Pandas-free path (only when pandas isn't available and a DataFrame
+        # wasn't requested): build typed dicts straight from raw tuples.
+        if not df and not has_pandas():
+            tokens = [Token.from_tuple(t) for t in self._raw_tokens(refresh)]
+            if listed_only:
+                tokens = [t for t in tokens if t.listed]
+            return [to_dict(t) for t in tokens]
+
         if self._tokens_df is None or refresh:
-            raw_data = self._lp.tokens_paginated()
+            raw_data = self._raw_tokens(refresh)
             self._tokens_df = self.processor.process_tokens(raw_data, listed_only=False)
             self._record_snapshot(self._tokens_df, "tokens")
             # Give the oracle token decimals so it can price non-18-decimal
@@ -299,6 +343,19 @@ class SugarClient:
 
         result = self._tokens_df[self._tokens_df["listed"]] if listed_only else self._tokens_df
         return result if df else self._records(result)
+
+    def _raw_tokens(self, refresh: bool = False) -> list[tuple]:
+        """Fetch (and cache) raw token tuples — pandas-free."""
+        if self._tokens_raw is None or refresh:
+            self._tokens_raw = self._lp.tokens_paginated()
+            # keep the oracle's decimals map fresh (pandas-free)
+            if self._price_provider is not None:
+                self._price_provider.set_token_decimals(self._token_decimals())
+        return self._tokens_raw
+
+    def _token_decimals(self) -> dict[str, int]:
+        """{token address: decimals} from raw tokens — pandas-free."""
+        return {t[0].lower(): int(t[2]) for t in self._raw_tokens()}
 
     def get_pools(self, filter_type: int = 0, df: bool = False) -> list[dict] | pd.DataFrame:
         """
@@ -334,6 +391,8 @@ class SugarClient:
             ContractNotAvailableError: If VeSugar is not available.
         """
         raw_data = self.ve.all_paginated()
+        if not df and not has_pandas():
+            return [to_dict(VeNFT.from_tuple(t)) for t in raw_data]
         result = self.processor.process_ve_all(raw_data)
         self._record_snapshot(result, "ve_positions")
         return result if df else self._records(result)
@@ -356,6 +415,11 @@ class SugarClient:
             ContractNotAvailableError: If RelaySugar is not available.
         """
         raw_data = self.relay.all()
+        if not df and not has_pandas():
+            relays = [Relay.from_tuple(t) for t in raw_data]
+            if filter_inactive:
+                relays = [r for r in relays if not r.inactive]
+            return [to_dict(r) for r in relays]
         result = self.processor.process_relay_all(
             raw_data, filter_inactive=filter_inactive
         )
@@ -455,12 +519,9 @@ class SugarClient:
         )
 
     def _token_meta(self) -> dict[str, tuple[str, int]]:
-        """Map lower-cased token address -> (symbol, decimals)."""
-        df = self.get_tokens(listed_only=False, df=True)
-        return {
-            str(addr).lower(): (row["symbol"], int(row["decimals"]))
-            for addr, row in df.iterrows()
-        }
+        """Map lower-cased token address -> (symbol, decimals) — pandas-free."""
+        # COLUMNS_TOKEN: token_address(0), symbol(1), decimals(2)
+        return {t[0].lower(): (t[1], int(t[2])) for t in self._raw_tokens()}
 
     def positions_by_account(
         self, account: str, price: bool = True
@@ -485,6 +546,9 @@ class SugarClient:
         chain_id = self._config.chain_id.value
         out: list[AccountPosition] = []
         meta = self._token_meta()  # cached token symbol/decimals lookup
+        if price:
+            # Ensure the oracle can adjust non-18-decimal rates (pandas-free).
+            self.prices.set_token_decimals(self._token_decimals())
 
         # --- veNFT locks (with Relay/managed-veNFT resolution) ---
         if self.has_ve():
@@ -537,20 +601,18 @@ class SugarClient:
         # --- LP / concentrated-liquidity positions ---
         lp_positions = self.lp.positions_paginated(account)
         if lp_positions:
-            # Map pool address -> token0/token1/type/emissions_token via get_pools
-            # (byAddress reverts for some CL pools, so use the full pool set).
-            pools_df = self.get_pools(df=True).reset_index()
-            pool_map = {
-                str(row["lp"]).lower(): row for _, row in pools_df.iterrows()
-            }
+            # Map pool address -> raw Lp tuple via all_paginated (pandas-free;
+            # byAddress reverts for some CL pools, so use the full pool set).
+            # COLUMNS_LP: lp(0), type(4), token0(7), token1(10), emissions_token(20)
+            pool_map = {p[0].lower(): p for p in self._lp.all_paginated()}
             for p in lp_positions:
                 pool_addr = p[1]
                 pool = pool_map.get(pool_addr.lower())
                 if pool is None:
                     continue
-                t0, t1 = pool["token0"], pool["token1"]
-                pool_type = pool["type"]
-                emissions_token = pool["emissions_token"]
+                t0, t1 = pool[7], pool[10]
+                pool_type = pool[4]
+                emissions_token = pool[20]
                 s0, d0 = meta.get(t0.lower(), ("?", 18))
                 s1, d1 = meta.get(t1.lower(), ("?", 18))
                 se, de = meta.get(emissions_token.lower(), ("?", 18))
@@ -591,14 +653,15 @@ class SugarClient:
     @property
     def snapshots(self) -> SnapshotStore | None:
         """Snapshot store (None if snapshotting was disabled)."""
-        return self._snapshots
+        return self._snapshot_store()
 
     def _record_snapshot(self, df: pd.DataFrame, dataset: str) -> None:
         """Persist a fetched dataset to the snapshot store (best-effort)."""
-        if self._snapshots is None:
+        store = self._snapshot_store()
+        if store is None:
             return
         try:
-            self._snapshots.save(
+            store.save(
                 df,
                 dataset=dataset,
                 chain=self._config.name.lower(),
@@ -624,9 +687,10 @@ class SugarClient:
             FileNotFoundError: If no matching snapshot exists.
             RuntimeError: If snapshotting was disabled for this client.
         """
-        if self._snapshots is None:
+        store = self._snapshot_store()
+        if store is None:
             raise RuntimeError("Snapshotting is disabled for this client")
-        return self._snapshots.load(dataset, self._config.name.lower(), block=block)
+        return store.load(dataset, self._config.name.lower(), block=block)
 
     def snapshot_history(self, dataset: str) -> pd.DataFrame:
         """
@@ -641,9 +705,10 @@ class SugarClient:
         Raises:
             RuntimeError: If snapshotting was disabled for this client.
         """
-        if self._snapshots is None:
+        store = self._snapshot_store()
+        if store is None:
             raise RuntimeError("Snapshotting is disabled for this client")
-        return self._snapshots.history(dataset, self._config.name.lower())
+        return store.history(dataset, self._config.name.lower())
 
     def export_dataframe(
         self,
@@ -674,7 +739,7 @@ class SugarClient:
         else:
             filename = f"{name}_{chain}.csv"
 
-        return self._export.to_csv(df, filename, subdirectory=subdirectory, index=index)
+        return self._export_service().to_csv(df, filename, subdirectory=subdirectory, index=index)
 
 
 def positions_across_chains(
