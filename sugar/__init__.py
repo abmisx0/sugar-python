@@ -8,6 +8,15 @@ from sugar.core.exceptions import (
     PriceNotAvailableError,
     SugarError,
 )
+from sugar.models import (
+    AccountPosition,
+    PositionKind,
+    Relay,
+    Token,
+    TokenAmount,
+    VeNFT,
+    to_dict,
+)
 from sugar.services.snapshot import SnapshotStore
 from sugar.utils.logging import setup_logging
 
@@ -21,4 +30,12 @@ __all__ = [
     "PriceNotAvailableError",
     "set_progress_callback",
     "setup_logging",
+    # Typed models
+    "AccountPosition",
+    "PositionKind",
+    "Relay",
+    "Token",
+    "TokenAmount",
+    "VeNFT",
+    "to_dict",
 ]
