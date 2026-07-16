@@ -17,6 +17,35 @@ Python library for interacting with Velodrome/Aerodrome Sugar Protocol contracts
 - Python 3.10+
 - An RPC endpoint for at least one supported chain (public endpoints work; a free [dRPC](https://drpc.org/) or [Alchemy](https://www.alchemy.com/) key is recommended for full-chain crawls)
 
+## Installation
+
+Not on PyPI yet — install straight from GitHub:
+
+```bash
+# core: typed/dict reads + positions_by_account (no pandas)
+pip install "git+https://github.com/abmisx0/sugar-python.git"
+
+# with pandas: DataFrame returns (df=True), CSV export, snapshots
+pip install "sugar-python[export] @ git+https://github.com/abmisx0/sugar-python.git"
+
+# pin a release
+pip install "git+https://github.com/abmisx0/sugar-python.git@v0.2.0"
+```
+
+Add it to `requirements.txt`:
+
+```
+sugar-python @ git+https://github.com/abmisx0/sugar-python.git@v0.2.0
+```
+
+or `pyproject.toml`:
+
+```toml
+dependencies = [
+    "sugar-python @ git+https://github.com/abmisx0/sugar-python.git@v0.2.0",
+]
+```
+
 ## From Zero to CSV
 
 ```bash
@@ -31,10 +60,10 @@ This exports token metadata and pool data for Base under `output/`, and writes
 block-stamped snapshots to `sugar-snapshots/`. See [EXPORTS.md](EXPORTS.md) for
 the snapshot layout and the other example scripts.
 
-> **pandas is optional.** `pip install sugar-python` gives you the typed/dict
-> reads and `positions_by_account` with no pandas. Add the `export` extra
-> (`pip install 'sugar-python[export]'`) for DataFrame returns (`df=True`),
-> `export_dataframe`, and snapshots.
+> **pandas is optional.** The core install (above) gives you the typed/dict
+> reads and `positions_by_account` with no pandas. Add the `export` extra for
+> DataFrame returns (`df=True`), `export_dataframe`, and snapshots — see
+> [Installation](#installation).
 
 ## Quick Start
 
