@@ -205,9 +205,27 @@ class AccountPosition:
     tokens: list[TokenAmount] = field(default_factory=list)
     rewards: list[TokenAmount] = field(default_factory=list)
     pool: str | None = None
-    usd_value: Decimal = Decimal(0)
+    usd_value: Decimal = Decimal(0)  # PRINCIPAL only (sum of tokens); see total_usd
     locked: bool = False
     meta: dict = field(default_factory=dict)  # kind-specific extras (venft id, expiry, ...)
+
+    @property
+    def symbol(self) -> str:
+        """Readable label for the position — e.g. "AERO" or "USDC/USDC.e".
+
+        Convenience so callers don't have to reach into ``tokens[0]``.
+        """
+        return "/".join(t.symbol for t in self.tokens)
+
+    @property
+    def rewards_usd(self) -> Decimal:
+        """Total USD of claimable rewards (0 for unpriced)."""
+        return sum((r.usd for r in self.rewards if r.usd is not None), Decimal(0))
+
+    @property
+    def total_usd(self) -> Decimal:
+        """Principal + claimable rewards. ``usd_value`` alone is principal only."""
+        return self.usd_value + self.rewards_usd
 
 
 @dataclass(slots=True)
@@ -232,8 +250,18 @@ class Portfolio:
 
     @property
     def usd_value(self) -> Decimal:
-        """Total USD across all positions that were priced."""
+        """Total principal USD across all positions (excludes rewards)."""
         return sum((p.usd_value for p in self.positions), Decimal(0))
+
+    @property
+    def rewards_usd(self) -> Decimal:
+        """Total claimable rewards USD across all positions."""
+        return sum((p.rewards_usd for p in self.positions), Decimal(0))
+
+    @property
+    def total_usd(self) -> Decimal:
+        """Principal + claimable rewards across all positions."""
+        return sum((p.total_usd for p in self.positions), Decimal(0))
 
 
 def to_dict(obj: object) -> object:
@@ -247,6 +275,13 @@ def to_dict(obj: object) -> object:
     if isinstance(obj, TokenAmount):
         out = {f.name: to_dict(getattr(obj, f.name)) for f in dataclasses.fields(obj)}
         out["usd"] = to_dict(obj.usd)
+        return out
+    if isinstance(obj, AccountPosition):
+        out = {f.name: to_dict(getattr(obj, f.name)) for f in dataclasses.fields(obj)}
+        # fold in the derived convenience fields
+        out["symbol"] = obj.symbol
+        out["rewards_usd"] = to_dict(obj.rewards_usd)
+        out["total_usd"] = to_dict(obj.total_usd)
         return out
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         return {f.name: to_dict(getattr(obj, f.name)) for f in dataclasses.fields(obj)}

@@ -52,6 +52,11 @@ snapshots — these raise a clear error if the extra is missing.
 
 ### Added
 
+- **`AccountPosition` convenience fields**: `symbol` (readable label like
+  `"USDC/USDe"`), `rewards_usd` (claimable rewards), and `total_usd`
+  (`usd_value + rewards_usd`). `usd_value` remains **principal only** — use
+  `total_usd`/`rewards_usd` so claimable value isn't missed. `Portfolio` exposes
+  the same three aggregated across chains. All folded into `to_dict()`.
 - **`positions_by_account(account)`** — an account's entire footprint on a chain
   as one normalized, priced, typed list (`list[AccountPosition]`): veNFT locks
   (with Relay/managed-veNFT principal resolved from `RelaySugar.account_venfts`)

@@ -101,9 +101,22 @@ from sugar import SugarClient, ChainId, to_dict
 
 client = SugarClient(ChainId.BASE)
 positions = client.positions_by_account("0x…")          # list[AccountPosition]
-total_usd = sum(p.usd_value for p in positions)
 rows = [to_dict(p) for p in positions]                   # JSON-friendly dicts
+
+for p in positions:
+    print(p.symbol, p.usd_value, "+", p.rewards_usd, "rewards =", p.total_usd)
 ```
+
+Each `AccountPosition` has:
+
+- `symbol` — readable label (`"AERO"`, `"USDC/USDe"`) so you don't dig into `tokens[0]`
+- `usd_value` — **principal only** (sum of `tokens`)
+- `rewards_usd` — claimable rewards (sum of `rewards`), **not** in `usd_value`
+- `total_usd` — `usd_value + rewards_usd` (use this for the full position value)
+- `tokens` / `rewards` — each a `TokenAmount` with `amount`, `amount_raw`, `price_usd`, `price_source`
+
+> **Principal vs. rewards.** `usd_value` is principal only; claimable rewards live
+> in `rewards`. Sum `total_usd` (or `rewards_usd`) so you don't miss claimable value.
 
 Across chains in one call, with graceful per-chain degradation:
 
@@ -111,9 +124,17 @@ Across chains in one call, with graceful per-chain degradation:
 from sugar import positions_across_chains, ChainId
 
 portfolio = positions_across_chains("0x…", chains=[ChainId.BASE, ChainId.OPTIMISM, ChainId.INK])
-print(portfolio.usd_value)     # total across all chains
+print(portfolio.usd_value, portfolio.rewards_usd, portfolio.total_usd)  # principal, rewards, both
 print(portfolio.errors)        # any chains that failed (e.g. RPC down) — not raised
 ```
+
+### Prices come from the on-chain oracle
+
+USD prices are read from the Sugar spot-price **oracle** (falling back to
+CoinGecko then DefiLlama), and each `TokenAmount` records which via
+`price_source`. Oracle prices are on-chain spot and can differ from a CEX /
+CoinGecko mid by a few percent — expect small reconciliation differences, and
+use `price_source` (and the raw `amount`) if you want to re-price yourself.
 
 ### Providing an RPC endpoint
 

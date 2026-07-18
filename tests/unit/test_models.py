@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from sugar.models import (
     AccountPosition,
+    Portfolio,
     PositionKind,
     Relay,
     Token,
@@ -14,6 +15,50 @@ from sugar.models import (
     VeNFT,
     to_dict,
 )
+
+
+def _priced(symbol: str, amount: str, price: str, decimals: int = 18) -> TokenAmount:
+    return TokenAmount(
+        address="0x" + symbol.lower(),
+        symbol=symbol,
+        decimals=decimals,
+        amount=Decimal(amount),
+        amount_raw=int(Decimal(amount) * (10**decimals)),
+        price_usd=Decimal(price),
+        price_source="oracle",
+    )
+
+
+class TestPositionDerivedFields:
+    def _pos(self) -> AccountPosition:
+        return AccountPosition(
+            protocol="velodrome",
+            chain="Ink",
+            chain_id=57073,
+            kind=PositionKind.CL,
+            tokens=[_priced("USDC", "100", "1"), _priced("USDe", "50", "1")],
+            rewards=[_priced("USDC", "5", "1"), _priced("VELO", "10", "0.02")],
+            usd_value=Decimal("150"),
+        )
+
+    def test_symbol_rewards_total(self) -> None:
+        p = self._pos()
+        assert p.symbol == "USDC/USDe"          # #4 convenience label
+        assert p.usd_value == Decimal("150")    # principal only
+        assert p.rewards_usd == Decimal("5.20")  # 5*1 + 10*0.02
+        assert p.total_usd == Decimal("155.20")  # #2 principal + rewards
+
+    def test_to_dict_folds_derived_fields(self) -> None:
+        d = to_dict(self._pos())
+        assert d["symbol"] == "USDC/USDe"
+        assert d["rewards_usd"] == Decimal("5.20")
+        assert d["total_usd"] == Decimal("155.20")
+
+    def test_portfolio_totals(self) -> None:
+        port = Portfolio(positions=[self._pos(), self._pos()])
+        assert port.usd_value == Decimal("300")
+        assert port.rewards_usd == Decimal("10.40")
+        assert port.total_usd == Decimal("310.40")
 
 
 class TestFromTuple:
