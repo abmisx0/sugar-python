@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0
+
+Distribution renamed to **`sugar-defi`** for PyPI (`sugar-python` was taken by an
+unrelated project). The import is unchanged — still `import sugar`.
+
+### Added
+
+- **`AccountPosition` convenience fields**: `symbol` (readable label like
+  `"USDC/USDe"`), `rewards_usd` (claimable rewards), and `total_usd`
+  (`usd_value + rewards_usd`). `usd_value` remains **principal only** — use
+  `total_usd`/`rewards_usd` so claimable value isn't missed. `Portfolio` exposes
+  the same three aggregated across chains. All folded into `to_dict()`.
+- Documented that USD prices come from the on-chain oracle (CoinGecko/DefiLlama
+  fallback), surfaced per token via `price_source`, and can differ a few percent
+  from CEX/CoinGecko spot.
+
 ## 0.2.0
 
 ### Breaking change: readers return `list[dict]` by default
@@ -52,11 +68,6 @@ snapshots — these raise a clear error if the extra is missing.
 
 ### Added
 
-- **`AccountPosition` convenience fields**: `symbol` (readable label like
-  `"USDC/USDe"`), `rewards_usd` (claimable rewards), and `total_usd`
-  (`usd_value + rewards_usd`). `usd_value` remains **principal only** — use
-  `total_usd`/`rewards_usd` so claimable value isn't missed. `Portfolio` exposes
-  the same three aggregated across chains. All folded into `to_dict()`.
 - **`positions_by_account(account)`** — an account's entire footprint on a chain
   as one normalized, priced, typed list (`list[AccountPosition]`): veNFT locks
   (with Relay/managed-veNFT principal resolved from `RelaySugar.account_venfts`)

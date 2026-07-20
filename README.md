@@ -19,30 +19,34 @@ Python library for interacting with Velodrome/Aerodrome Sugar Protocol contracts
 
 ## Installation
 
-Not on PyPI yet — install straight from GitHub:
+The distribution is **`sugar-defi`** (the import stays `import sugar`).
 
 ```bash
 # core: typed/dict reads + positions_by_account (no pandas)
 pip install "git+https://github.com/abmisx0/sugar-python.git"
 
 # with pandas: DataFrame returns (df=True), CSV export, snapshots
-pip install "sugar-python[export] @ git+https://github.com/abmisx0/sugar-python.git"
+pip install "sugar-defi[export] @ git+https://github.com/abmisx0/sugar-python.git"
 
 # pin a release
-pip install "git+https://github.com/abmisx0/sugar-python.git@v0.2.0"
+pip install "git+https://github.com/abmisx0/sugar-python.git@v0.3.0"
 ```
+
+> Use a virtualenv (or `pipx`) — on a Homebrew/system Python, `pip install` may
+> refuse with a PEP 668 "externally-managed-environment" error. `python -m venv
+> .venv && source .venv/bin/activate` first.
 
 Add it to `requirements.txt`:
 
 ```
-sugar-python @ git+https://github.com/abmisx0/sugar-python.git@v0.2.0
+sugar-defi @ git+https://github.com/abmisx0/sugar-python.git@v0.3.0
 ```
 
 or `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "sugar-python @ git+https://github.com/abmisx0/sugar-python.git@v0.2.0",
+    "sugar-defi @ git+https://github.com/abmisx0/sugar-python.git@v0.3.0",
 ]
 ```
 
